@@ -174,7 +174,7 @@
 
   function toast(msg) {
     const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
-    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.add("hidden"), 2400);
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.add("hidden"), Math.max(2400, msg.length * 70));
   }
 
   function segButtons(el, options, value, onPick) {
@@ -511,14 +511,29 @@
       }
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { toast("Notifications are blocked. Turn them on in Settings → Notifications → Our Schedule."); return; }
-      const reg = await navigator.serviceWorker.ready;
-      const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
-      await rpc("save_push", { p_person: me, p_sub: sub.toJSON(), p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
-      updateBell();
-      notifyOther("test", "Notifications are on 🍂", "You'll get reminders and a heads-up when things change.", { endpoint: sub.endpoint });
-      toast("Notifications on");
+      let step = "subscribe";
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
+        step = "save";
+        await rpc("save_push", { p_person: me, p_sub: sub.toJSON(), p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        step = "test";
+        const res = await fetch(notifyUrl(), { method: "POST", headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
+          body: JSON.stringify({ code, type: "test", from: me, title: "Notifications are on 🍂", text: "You'll get reminders and a heads-up when things change.", endpoint: sub.endpoint }) });
+        const data = await res.json().catch(() => ({}));
+        updateBell();
+        if (!res.ok) toast(res.status === 404 ? "Almost: the 'notify' function isn't deployed in Supabase yet." : "Almost: " + (data.error || data.message || `notify error ${res.status}`));
+        else if (!data.sent) toast("Saved, but the test notification didn't go through. Check the VAPID secrets in Supabase.");
+        else toast("Notifications on");
+      } catch (err) {
+        updateBell();
+        const msg = step === "save" ? (err.badCode ? "Wrong passcode." : "Couldn't save. Run supabase-notify.sql in Supabase first.")
+          : step === "subscribe" ? "Your phone refused: " + (err.message || err.name)
+          : "Couldn't reach the notify function: " + (err.message || err.name);
+        toast(msg);
+      }
     } catch (err) {
-      toast(err.badCode ? "Wrong passcode." : "Couldn't turn on notifications. Has supabase-notify.sql been run?");
+      toast("Couldn't turn on notifications: " + (err.message || err.name));
     }
   };
   updateBell();
