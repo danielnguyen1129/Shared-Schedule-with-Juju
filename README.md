@@ -2,7 +2,7 @@
 
 A tiny shared calendar for two, built to live on your iPhone home screen.
 
-- **Upcoming** list and **Month** calendar, colour-coded by person (Daniel / Juju / Both)
+- **Upcoming** list and **Month** calendar, colour-coded by person (Daniel / Julie / Both)
 - Times or all-day, multi-day trips, repeats (daily, weekly, every 2 weeks, monthly, yearly), location and notes
 - Changes sync between phones (refreshes when you open the app and every 20 seconds)
 - Protected by a shared passcode
