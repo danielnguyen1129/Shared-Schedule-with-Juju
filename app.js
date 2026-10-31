@@ -435,6 +435,9 @@
   $("title").addEventListener("touchend", () => clearTimeout(lp));
   $("title").addEventListener("dblclick", () => showSetup());
 
+  // No zooming: block pinch (Safari ignores user-scalable=no); CSS touch-action stops double-tap zoom
+  ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+
   if (me && (!REMOTE || code)) startApp(); else showSetup();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 

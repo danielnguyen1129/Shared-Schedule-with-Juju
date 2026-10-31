@@ -16,6 +16,6 @@ A tiny shared calendar for two, built to live on your iPhone home screen.
 Open the site in Safari → Share button → **Add to Home Screen**.
 
 ## Tips
-- Double-tap (or long-press) the title to switch person or re-enter the passcode.
+- Press and hold the title to switch person or re-enter the passcode.
 - Tap the month name to jump back to today. Swipe left/right to change months.
 - To change the passcode later, re-run just the last statement of `supabase.sql` with the new code.

@@ -7,7 +7,7 @@
   :root { --bg: #17131a; --card: #221d26; --ink: #f4eef6; --muted: #a69cab; --line: #342c39; }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; background: var(--bg); color: var(--ink);
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; margin: 0; background: var(--bg); color: var(--ink);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
 body { min-height: 100vh; min-height: 100dvh; overscroll-behavior-y: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
