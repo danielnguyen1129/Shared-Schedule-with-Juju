@@ -127,3 +127,12 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 .tab-icon.pair .dot + .dot { margin-left: -5px; }
 .tab.on { color: var(--ink); }
 .tab.on .dot { opacity: 1; transform: scale(1.2); }
+
+/* Overlapping plans */
+.event.clash { box-shadow: 0 0 0 2px #ef4444 inset, 0 1px 2px rgba(0,0,0,.05); }
+.clash-note { font-size: 13px; color: #dc2626; font-weight: 600; margin-top: 3px; }
+.clash-banner { background: color-mix(in srgb, #ef4444 12%, var(--card)); color: #b91c1c; border-radius: 12px;
+  padding: 10px 12px; margin-top: 10px; font-size: 14px; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .clash-banner { color: #fca5a5; } .clash-note { color: #f87171; } }
+.cell.has-clash .n { box-shadow: 0 0 0 2px #ef4444; }
+.cell.has-clash.sel .n { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ef4444; }

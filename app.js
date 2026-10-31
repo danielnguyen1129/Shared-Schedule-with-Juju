@@ -86,7 +86,24 @@
       const at = a.idx > 0 ? "" : (a.e.start_time || ""), bt = b.idx > 0 ? "" : (b.e.start_time || "");
       return at.localeCompare(bt) || a.e.title.localeCompare(b.e.title);
     });
+    markClashes(map);
     return map;
+  }
+
+  // Flag timed events that overlap on the same day (e.g. Daniel's gym vs a dinner together)
+  const mins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  function markClashes(map) {
+    for (const day in map) {
+      const timed = map[day].filter(it => it.dur === 0 && it.e.start_time);
+      for (const it of map[day]) it.clash = [];
+      for (let i = 0; i < timed.length; i++) for (let j = i + 1; j < timed.length; j++) {
+        const a = timed[i], b = timed[j];
+        if (a.e.id === b.e.id) continue;
+        const as = mins(a.e.start_time), ae = a.e.end_time && mins(a.e.end_time) > as ? mins(a.e.end_time) : as + 60;
+        const bs = mins(b.e.start_time), be = b.e.end_time && mins(b.e.end_time) > bs ? mins(b.e.end_time) : bs + 60;
+        if (as < be && bs < ae) { a.clash.push(b); b.clash.push(a); }
+      }
+    }
   }
 
   // ---------- storage ----------
@@ -169,9 +186,9 @@
     }
   }
 
-  function eventButton({ e, start, idx, dur }) {
+  function eventButton({ e, start, idx, dur, clash }) {
     const p = person(e.who);
-    const b = document.createElement("button"); b.className = "event"; b.style.setProperty("--c", p.color);
+    const b = document.createElement("button"); b.className = "event" + (clash && clash.length ? " clash" : ""); b.style.setProperty("--c", p.color);
     let time;
     if (dur > 0 && idx > 0 && idx < dur) time = "All day";
     else if (dur > 0 && idx === dur) time = e.end_time ? "until " + fmtTime(e.end_time) : "All day";
@@ -185,6 +202,11 @@
     b.querySelector(".time").textContent = time;
     b.querySelector(".t").textContent = e.title;
     b.querySelector(".sub").textContent = subs.join(" · ");
+    if (clash && clash.length) {
+      const w = document.createElement("div"); w.className = "clash-note";
+      w.textContent = "⚠ Overlaps with " + clash.map(c => `${c.e.title} (${person(c.e.who).name})`).join(", ");
+      b.querySelector(".body").append(w);
+    }
     b.onclick = () => openSheet(e, start);
     return b;
   }
@@ -194,6 +216,13 @@
     const from = todayS(), to = addDays(from, listDays);
     const map = buildDays(events, from, to);
     const days = Object.keys(map).sort();
+    const clashes = new Set();
+    for (const d of days) for (const it of map[d]) if (it.clash.length) clashes.add(d);
+    if (clashes.size) {
+      const n = document.createElement("div"); n.className = "clash-banner";
+      n.textContent = `⚠ ${clashes.size} day${clashes.size > 1 ? "s have" : " has"} overlapping plans coming up. Look for the red cards.`;
+      el.append(n);
+    }
     if (!days.length) {
       el.innerHTML = `<div class="empty">Nothing planned in the next ${listDays} days.<br>Tap <b>+</b> to add something fun.</div>`;
     }
@@ -227,6 +256,7 @@
         const dot = document.createElement("span"); dot.className = "dot"; dot.style.setProperty("--c", person(it.e.who).color);
         if (!seen.has(it.e.id)) { seen.add(it.e.id); c.querySelector(".dots").append(dot); }
       }
+      if ((map[d] || []).some(it => it.clash.length)) c.classList.add("has-clash");
       c.onclick = () => { selected = d; if (d.slice(0, 7) !== cursor) cursor = d.slice(0, 7); renderMonth(); };
       grid.append(c);
     }
