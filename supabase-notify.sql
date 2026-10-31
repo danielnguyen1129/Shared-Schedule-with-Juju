@@ -53,11 +53,11 @@ end $$;
 grant execute on function public.save_push(text, text, jsonb, text), public.delete_push(text, text),
   public.list_push(text), public.mark_sent(text, text) to anon, authenticated;
 
--- Check for upcoming reminders every 5 minutes.
+-- Check for upcoming reminders every minute (needed for the "1 minute before" option).
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 select cron.unschedule('schedule-reminders') where exists (select 1 from cron.job where jobname = 'schedule-reminders');
-select cron.schedule('schedule-reminders', '*/5 * * * *', $cron$
+select cron.schedule('schedule-reminders', '* * * * *', $cron$
   select net.http_post(
     url := 'https://whcfthvbpomlfbeqvyad.supabase.co/functions/v1/notify',
     headers := '{"Content-Type": "application/json"}'::jsonb,

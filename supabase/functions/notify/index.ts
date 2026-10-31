@@ -2,8 +2,9 @@
 //   type "change"    -> tell the other person that something on the calendar changed
 //   type "chat"      -> tell the other person about a message in the Together chat
 //   type "test"      -> confirm notifications work on the sender's own phone
-//   type "reminders" -> run every 5 minutes by pg_cron (see supabase-notify.sql):
-//                       1 hour before timed events, 8am for all-day events, and at a to-do's time slot
+//   type "reminders" -> run every minute by pg_cron (see supabase-notify.sql). Each phone picks its own
+//                       reminder times (sub.prefs: r1440 / r60 / r5 / r1 = minutes before). All-day events
+//                       remind at 8am (and 8am the day before with r1440); to-dos at their start time.
 // Needs secrets VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY. Deploy with "Verify JWT" turned OFF.
 import webpush from "npm:web-push@3.6.7";
 
@@ -23,7 +24,10 @@ export type Ev = {
   id: string; title: string; date: string; end_date: string | null; start_time: string | null; end_time: string | null;
   who: string; repeat: string; notes: string | null;
 };
-type Sub = { endpoint: string; person: string; sub: webpush.PushSubscription; tz: string };
+export type Prefs = { r1440?: boolean; r60?: boolean; r5?: boolean; r1?: boolean };
+type Sub = { endpoint: string; person: string; sub: webpush.PushSubscription & { prefs?: Prefs }; tz: string };
+const DEFAULT_PREFS: Prefs = { r60: true };
+const OFFSETS: [keyof Prefs, number, string][] = [["r1440", 1440, "Tomorrow"], ["r60", 60, "In 1 hour"], ["r5", 5, "In 5 min"], ["r1", 1, "In 1 min"]];
 
 // ---- dates (YYYY-MM-DD strings, UTC math) ----
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -64,11 +68,11 @@ const wallMin = (date: string, time: string) => {
 const fmtTime = (t: string) => { let [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "pm" : "am"; h = h % 12 || 12; return m ? `${h}:${pad(m)}${ap}` : `${h}${ap}`; };
 
 // Reminders that are due for one person right now (fire if due within the last 10 minutes).
-export function dueReminders(events: Ev[], person: string, tz: string, at = new Date()) {
+export function dueReminders(events: Ev[], person: string, tz: string, at = new Date(), prefs: Prefs = DEFAULT_PREFS) {
   const now = localNow(tz, at);
   const out: { key: string; title: string; body: string }[] = [];
   const due = (m: number) => m <= now.min && m > now.min - 10;
-  for (const day of [addDays(now.date, -1), now.date, addDays(now.date, 1)]) {
+  for (const day of [addDays(now.date, -1), now.date, addDays(now.date, 1), addDays(now.date, 2)]) {
     for (const e of events) {
       if (e.repeat === "todo") {
         if (e.notes === "done" || !e.start_time || e.date !== day) continue;
@@ -77,10 +81,15 @@ export function dueReminders(events: Ev[], person: string, tz: string, at = new 
       }
       if (e.who !== person && e.who !== "both") continue;
       if (!startsOn(e, day)) continue;
+      const tag = e.who === "both" ? " · together" : "";
       if (e.start_time) {
-        if (due(wallMin(day, e.start_time) - 60)) out.push({ key: `ev|${e.id}|${day}|60`, title: `In 1 hour: ${e.title}`, body: `${fmtTime(e.start_time)}${e.end_time ? "–" + fmtTime(e.end_time) : ""}${e.who === "both" ? " · together" : ""}` });
-      } else if (due(wallMin(day, "08:00"))) {
-        out.push({ key: `ev|${e.id}|${day}|8am`, title: `Today: ${e.title}`, body: e.who === "both" ? "All day · together" : "All day" });
+        const when = `${fmtTime(e.start_time)}${e.end_time ? "–" + fmtTime(e.end_time) : ""}`;
+        for (const [k, mins, label] of OFFSETS) {
+          if (prefs[k] && due(wallMin(day, e.start_time) - mins)) out.push({ key: `ev|${e.id}|${day}|${mins}`, title: `${label}: ${e.title}`, body: `${when}${tag}` });
+        }
+      } else {
+        if (due(wallMin(day, "08:00"))) out.push({ key: `ev|${e.id}|${day}|8am`, title: `Today: ${e.title}`, body: "All day" + tag });
+        if (prefs.r1440 && due(wallMin(day, "08:00") - 1440)) out.push({ key: `ev|${e.id}|${day}|8am-1d`, title: `Tomorrow: ${e.title}`, body: "All day" + tag });
       }
     }
   }
@@ -109,7 +118,8 @@ if (import.meta.main) Deno.serve(async (req) => {
 
   const send = async (s: Sub, title: string, text: string, tag?: string) => {
     try {
-      await webpush.sendNotification(s.sub, JSON.stringify({ title, body: text, url: APP_URL, tag }), { TTL: 3600 });
+      const { endpoint, keys } = s.sub;
+      await webpush.sendNotification({ endpoint, keys }, JSON.stringify({ title, body: text, url: APP_URL, tag }), { TTL: 3600 });
       return true;
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
@@ -122,7 +132,7 @@ if (import.meta.main) Deno.serve(async (req) => {
     const events = (await rpc("list_events")) as Ev[];
     let sent = 0;
     for (const s of subs) {
-      for (const r of dueReminders(events, s.person, s.tz)) {
+      for (const r of dueReminders(events, s.person, s.tz, new Date(), { ...DEFAULT_PREFS, ...(s.sub.prefs ?? {}) })) {
         if (await rpc("mark_sent", { p_key: `${s.endpoint.slice(-40)}|${r.key}` })) { if (await send(s, r.title, r.body, r.key)) sent++; }
       }
     }

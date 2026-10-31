@@ -504,11 +504,7 @@
     }
     try {
       const existing = await pushSub();
-      if (existing && Notification.permission === "granted") {
-        if (!confirm("Turn off notifications on this phone?")) return;
-        await rpc("delete_push", { p_endpoint: existing.endpoint }).catch(() => {});
-        await existing.unsubscribe(); updateBell(); toast("Notifications off"); return;
-      }
+      if (existing && Notification.permission === "granted") { openNotifSheet(); return; }
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { toast("Notifications are blocked. Turn them on in Settings → Notifications → Our Schedule."); return; }
       let step = "subscribe";
@@ -516,7 +512,7 @@
         const reg = await navigator.serviceWorker.ready;
         const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
         step = "save";
-        await rpc("save_push", { p_person: me, p_sub: sub.toJSON(), p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        await savePush(sub);
         step = "test";
         const res = await fetch(notifyUrl(), { method: "POST", headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
           body: JSON.stringify({ code, type: "test", from: me, title: "Notifications are on 🍂", text: "You'll get reminders and a heads-up when things change.", endpoint: sub.endpoint }) });
@@ -524,7 +520,7 @@
         updateBell();
         if (!res.ok) toast(res.status === 404 ? "Almost: the 'notify' function isn't deployed in Supabase yet." : "Almost: " + (data.error || data.message || `notify error ${res.status}`));
         else if (!data.sent) toast("Saved, but the test notification didn't go through. Check the VAPID secrets in Supabase.");
-        else toast("Notifications on");
+        else { toast("Notifications on"); openNotifSheet(); }
       } catch (err) {
         updateBell();
         const msg = step === "save" ? (err.badCode ? "Wrong passcode." : "Couldn't save. Run supabase-notify.sql in Supabase first.")
@@ -537,6 +533,32 @@
     }
   };
   updateBell();
+
+  // Reminder options are stored with this phone's subscription (sub.prefs), read by the notify function.
+  const defaultPrefs = { r1440: false, r60: true, r5: false, r1: false };
+  const getPrefs = () => ({ ...defaultPrefs, ...LS.get("notif.prefs", {}) });
+  async function savePush(sub) {
+    await rpc("save_push", { p_person: me, p_sub: { ...sub.toJSON(), prefs: getPrefs() }, p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  }
+  function openNotifSheet() {
+    const prefs = getPrefs();
+    document.querySelectorAll("#nsheet [data-pref]").forEach(el => { el.checked = !!prefs[el.dataset.pref]; });
+    $("nsheet").classList.remove("hidden"); $("nsheet-bg").classList.remove("hidden");
+  }
+  function closeNotifSheet() { $("nsheet").classList.add("hidden"); $("nsheet-bg").classList.add("hidden"); }
+  $("nsheet-done").onclick = closeNotifSheet;
+  $("nsheet-bg").onclick = closeNotifSheet;
+  document.querySelectorAll("#nsheet [data-pref]").forEach(el => el.onchange = async () => {
+    LS.set("notif.prefs", { ...getPrefs(), [el.dataset.pref]: el.checked });
+    try { const sub = await pushSub(); if (sub) await savePush(sub); }
+    catch { el.checked = !el.checked; LS.set("notif.prefs", { ...getPrefs(), [el.dataset.pref]: el.checked }); toast("Couldn't save that. Check your connection."); }
+  });
+  $("notif-off").onclick = async () => {
+    if (!confirm("Turn off notifications on this phone?")) return;
+    const sub = await pushSub().catch(() => null);
+    if (sub) { await rpc("delete_push", { p_endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+    closeNotifSheet(); updateBell(); toast("Notifications off");
+  };
 
   // ---------- editor ----------
   let editing = null, formWho = "both";

@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Our Schedule">
   <meta name="theme-color" content="#fbf1e3">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793468165">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793469910">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest?v=1793468165">
-  <link rel="stylesheet" href="styles.css?v=1793468165">
+  <link rel="manifest" href="manifest.webmanifest?v=1793469910">
+  <link rel="stylesheet" href="styles.css?v=1793469910">
 </head>
 <body>
   <!-- Setup / sign-in -->
@@ -121,9 +121,28 @@
     </div>
   </form>
 
+  <!-- Notification settings sheet -->
+  <div id="nsheet-bg" class="sheet-bg hidden"></div>
+  <div id="nsheet" class="sheet hidden">
+    <div class="sheet-head">
+      <span style="width:60px"></span>
+      <strong>Notifications</strong>
+      <button type="button" id="nsheet-done" class="link bold">Done</button>
+    </div>
+    <div class="sheet-body">
+      <p class="muted small">Remind me before my events and our shared events:</p>
+      <label class="field row"><span>1 day before</span><input type="checkbox" class="toggle" data-pref="r1440"></label>
+      <label class="field row"><span>1 hour before</span><input type="checkbox" class="toggle" data-pref="r60"></label>
+      <label class="field row"><span>5 minutes before</span><input type="checkbox" class="toggle" data-pref="r5"></label>
+      <label class="field row"><span>1 minute before</span><input type="checkbox" class="toggle" data-pref="r1"></label>
+      <p class="muted small">All-day events remind you at 8am (and 8am the day before if "1 day before" is on). To-dos remind you at their start time.</p>
+      <button type="button" id="notif-off" class="btn danger wide">Turn off notifications on this phone</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
-  <script src="config.js?v=1793468165"></script>
-  <script src="app.js?v=1793468165"></script>
+  <script src="config.js?v=1793469910"></script>
+  <script src="app.js?v=1793469910"></script>
 </body>
 </html>
