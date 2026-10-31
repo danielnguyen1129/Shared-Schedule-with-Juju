@@ -164,7 +164,7 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 /* Ask (AI) tab */
 .ai-log { display: flex; flex-direction: column; gap: 8px; padding-bottom: 70px; }
 .bubble { max-width: 85%; padding: 10px 14px; border-radius: 18px; line-height: 1.4; word-wrap: break-word; }
-.bubble.me { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 6px; white-space: pre-wrap; }
+.bubble.me { align-self: flex-end; background: var(--c, var(--accent)); color: white; border-bottom-right-radius: 6px; white-space: pre-wrap; }
 .bubble.bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 6px; box-shadow: 0 1px 2px rgba(120,53,15,.08); }
 .bubble.err { color: var(--danger); }
 .typing span { display: inline-block; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
@@ -175,3 +175,11 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 .ai-form textarea { flex: 1; resize: none; border: 1px solid var(--line); background: var(--card); border-radius: 20px; padding: 9px 14px; outline: none; max-height: 140px; line-height: 1.35; }
 .ai-send { width: 40px; height: 40px; border-radius: 20px; border: 0; background: var(--accent); color: white; font-size: 20px; font-weight: 700; flex: 0 0 auto; }
 #ai-new { padding: 6px 2px; }
+
+.ai-head { position: sticky; top: 57px; margin: -8px -12px 0; padding-left: 12px; padding-right: 12px; border-bottom: 1px solid var(--line); z-index: 4; background: var(--bg); padding: 6px 0 4px; text-align: center; }
+.ai-head .seg { margin: 0 auto; max-width: 340px; }
+.ai-note { margin: 6px 0 0; }
+.bubble-name { font-size: 11px; font-weight: 700; opacity: .85; margin-bottom: 2px; }
+.bubble.me.other { align-self: flex-start; border-bottom-right-radius: 18px; border-bottom-left-radius: 6px; }
+.ai-readonly { position: fixed; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 68px); text-align: center; padding: 12px; margin: 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent); }

@@ -155,6 +155,7 @@
     loading = true; if (REMOTE) setSync("busy");
     try {
       events = (await api.list()).map(normalize);
+      if (filter === "ai") loadChat();
       LS.set("events", events);
       setSync(REMOTE ? "" : "off");
       render();
@@ -285,7 +286,7 @@
         : o.ai ? `<span class="tab-icon check">✦</span>`
         : `<span class="tab-icon"><span class="dot"></span></span>`;
       const label = document.createElement("span"); label.className = "tab-label"; label.textContent = o.name; b.append(label);
-      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, o.ai ? document.body.scrollHeight : 0); };
+      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, o.ai ? document.body.scrollHeight : 0); if (o.ai) loadChat(); };
       el.append(b);
     }
   }
@@ -302,7 +303,7 @@
     if (ai) {
       $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
       $("prev").disabled = $("next").disabled = true;
-      $("title").textContent = `${person(me).name}'s assistant`; renderChat(false); return;
+      $("title").textContent = "Assistant"; renderChat(false); return;
     }
     if (todo) {
       $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
@@ -366,51 +367,93 @@
     $("todo-text").focus();
   };
 
-  // ---------- AI assistant (private per person: history is kept on this phone only) ----------
-  const chatKey = () => "chat." + (me || "x");
-  let chat = [];
-  let thinking = false;
+  // ---------- Shared AI assistant: one conversation, sub-chats Together / Daniel / Julie ----------
+  // Messages live in Supabase (chat_messages) so both phones see every sub-chat.
+  let chatMsgs = LS.get("chat.cache", []);
+  let chatThread = LS.get("chat.thread", null);
+  let thinking = null; // thread currently waiting for a reply
+  let chatLoading = false;
   const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const formatAi = s => escapeHtml(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+  const threads = () => [{ id: "together", name: "Together" }, ...PEOPLE.filter(p => p.id !== "both")];
+  async function loadChat(full) {
+    if (!REMOTE || chatLoading) return;
+    chatLoading = true;
+    try {
+      const since = !full && chatMsgs.length ? chatMsgs[chatMsgs.length - 1].created_at : null;
+      const fresh = await rpc("list_chat", since ? { p_since: since } : {});
+      const before = chatMsgs.length;
+      chatMsgs = full ? fresh : chatMsgs.concat(fresh.filter(m => !chatMsgs.some(x => x.id === m.id)));
+      LS.set("chat.cache", chatMsgs.slice(-600));
+      if (filter === "ai" && (full || chatMsgs.length !== before)) renderChat();
+    } catch (err) { if (!err.badCode && filter === "ai" && full) toast("Couldn't load the chat. Run supabase-chat.sql in Supabase?"); }
+    finally { chatLoading = false; }
+  }
   function renderChat(scroll = true) {
-    chat = LS.get(chatKey(), []);
+    chatThread ||= me || "together";
+    document.querySelector(".ai-head").style.top = document.querySelector(".top").offsetHeight + "px";
+    segButtons($("ai-threads"), threads().map(t => ({ ...t, color: person(t.id === "together" ? "both" : t.id).color })), chatThread, id => {
+      chatThread = id; LS.set("chat.thread", id); renderChat();
+    });
+    const mine = chatThread === "together" || chatThread === me;
+    $("ai-form").classList.toggle("hidden", !mine);
+    $("ai-readonly").classList.toggle("hidden", mine);
+    $("ai-readonly").textContent = mine ? "" : `This is ${person(chatThread).name}'s chat. You can read it; only ${person(chatThread).name} can write here.`;
+    $("ai-new").classList.toggle("hidden", !mine);
     const log = $("ai-log"); log.innerHTML = "";
-    if (!chat.length) {
-      log.innerHTML = `<div class="empty">Hi ${escapeHtml(person(me).name)}! 🍂<br>Ask me anything, like<br><i>"When are we both free this week?"</i><br><i>"Cozy date ideas for Saturday?"</i><br><span class="small">This chat is just yours.</span></div>`;
+    const list = chatMsgs.filter(m => m.thread === chatThread);
+    if (!list.length) {
+      const who = chatThread === "together" ? "both of you" : person(chatThread).name;
+      log.innerHTML = `<div class="empty">This is the chat for ${escapeHtml(who)}. 🍂<br>Try <i>"When are we both free this week?"</i><br>or <i>"What did Julie ask you about?"</i></div>`;
     }
-    for (const m of chat) {
-      const b = document.createElement("div"); b.className = "bubble " + (m.role === "user" ? "me" : "bot");
-      if (m.role === "user") b.textContent = m.content; else b.innerHTML = formatAi(m.content);
-      if (m.error) b.classList.add("err");
+    for (const m of list) {
+      const b = document.createElement("div");
+      if (m.author === "ai") { b.className = "bubble bot"; b.innerHTML = formatAi(m.content); }
+      else {
+        b.className = "bubble me" + (m.author !== me ? " other" : "");
+        b.style.setProperty("--c", person(m.author).color);
+        if (chatThread === "together" || m.author !== me) { const n = document.createElement("div"); n.className = "bubble-name"; n.textContent = person(m.author).name; b.append(n); }
+        b.append(document.createTextNode(m.content));
+      }
+      if (m.error) { b.classList.add("err"); b.append(document.createElement("br"), Object.assign(document.createElement("b"), { textContent: "Tap to try again" })); b.onclick = () => { if (!thinking) askAi(m.thread); }; }
       log.append(b);
     }
-    if (thinking) { const t = document.createElement("div"); t.className = "bubble bot typing"; t.innerHTML = "<span></span><span></span><span></span>"; log.append(t); }
+    if (thinking === chatThread) { const t = document.createElement("div"); t.className = "bubble bot typing"; t.innerHTML = "<span></span><span></span><span></span>"; log.append(t); }
     if (scroll) requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
   }
   async function sendChat(text) {
     if (!REMOTE) { toast("The assistant needs the shared database connected."); return; }
-    chat = LS.get(chatKey(), []).filter(m => !m.error);
-    chat.push({ role: "user", content: text }); LS.set(chatKey(), chat);
-    thinking = true; renderChat();
+    const thread = chatThread;
+    chatMsgs = chatMsgs.filter(m => !m.error);
+    try {
+      const saved = await rpc("add_chat", { p_thread: thread, p_author: me, p_content: text });
+      chatMsgs.push(saved);
+    } catch (err) {
+      toast(err.badCode ? "Wrong passcode." : "Couldn't send. Run supabase-chat.sql in Supabase?"); return;
+    }
+    askAi(thread);
+  }
+  async function askAi(thread) {
+    chatMsgs = chatMsgs.filter(m => !m.error);
+    thinking = thread; renderChat();
     const n = new Date();
     try {
       const res = await fetch(`${CFG.supabaseUrl.replace(/\/$/, "")}/functions/v1/${CFG.aiFunction || "ai-chat"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
         body: JSON.stringify({
-          code, person: me, today: todayS() + " (" + n.toLocaleDateString(undefined, { weekday: "long" }) + ")",
+          code, person: me, thread, today: todayS() + " (" + n.toLocaleDateString(undefined, { weekday: "long" }) + ")",
           now: n.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
           people: Object.fromEntries(PEOPLE.map(p => [p.id, p.name])),
-          messages: chat.map(({ role, content }) => ({ role, content })),
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.text) throw new Error(data.error || (res.status === 404 ? "The assistant isn't set up in Supabase yet." : `Error ${res.status}`));
-      chat.push({ role: "assistant", content: data.text });
+      if (!res.ok || !data.message) throw new Error(data.error || (res.status === 404 ? "The assistant isn't set up in Supabase yet." : `Error ${res.status}`));
+      if (!chatMsgs.some(x => x.id && x.id === data.message.id)) chatMsgs.push(data.message);
     } catch (err) {
-      chat.push({ role: "assistant", content: "⚠ " + (err.message === "Failed to fetch" ? "Couldn't reach the assistant. Check your connection." : err.message), error: true });
+      chatMsgs.push({ thread, author: "ai", content: "⚠ " + (err.message === "Failed to fetch" ? "Couldn't reach the assistant. Check your connection." : err.message), error: true });
     }
-    LS.set(chatKey(), chat); thinking = false;
+    LS.set("chat.cache", chatMsgs.filter(m => !m.error).slice(-600)); thinking = null;
     if (filter === "ai") renderChat();
   }
   const aiInput = $("ai-input");
@@ -421,7 +464,13 @@
     const text = aiInput.value.trim(); if (!text || thinking) return;
     aiInput.value = ""; growInput(); sendChat(text);
   };
-  $("ai-new").onclick = () => { if (thinking) return; LS.set(chatKey(), []); renderChat(); };
+  $("ai-new").onclick = async () => {
+    if (thinking) return;
+    const name = chatThread === "together" ? "the Together chat" : "your chat";
+    if (!confirm(`Clear ${name}? This deletes it for both of you.`)) return;
+    try { await rpc("clear_chat", { p_thread: chatThread }); chatMsgs = chatMsgs.filter(m => m.thread !== chatThread); LS.set("chat.cache", chatMsgs); renderChat(); }
+    catch { toast("Couldn't clear. Try again."); }
+  };
 
   // ---------- editor ----------
   let editing = null, formWho = "both";
