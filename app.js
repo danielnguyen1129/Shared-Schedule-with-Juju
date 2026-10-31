@@ -363,6 +363,7 @@
     const text = $("todo-text").value.trim(); if (!text) return;
     const start = $("todo-start").value || null, end = start && $("todo-end").value > start ? $("todo-end").value : null;
     saveTodo({ title: text, date: todayS(), start_time: start, end_time: end, repeat: "todo", who: me || "both", created_by: me, notes: null });
+    notifyOther("change", `${person(me).name} added a to-do`, text + (start ? ` · ${fmtTime(start)}` : ""));
     $("todo-text").value = ""; $("todo-start").value = ""; $("todo-end").value = "";
     $("todo-text").focus();
   };
@@ -428,6 +429,7 @@
     try {
       const saved = await rpc("add_chat", { p_thread: thread, p_author: me, p_content: text });
       chatMsgs.push(saved);
+      if (thread === "together") notifyOther("chat", `${person(me).name} in the Together chat`, text.slice(0, 140));
     } catch (err) {
       toast(err.badCode ? "Wrong passcode." : "Couldn't send. Run supabase-chat.sql in Supabase?"); return;
     }
@@ -471,6 +473,55 @@
     try { await rpc("clear_chat", { p_thread: chatThread }); chatMsgs = chatMsgs.filter(m => m.thread !== chatThread); LS.set("chat.cache", chatMsgs); renderChat(); }
     catch { toast("Couldn't clear. Try again."); }
   };
+
+  // ---------- notifications ----------
+  const notifyUrl = () => `${CFG.supabaseUrl.replace(/\/$/, "")}/functions/v1/notify`;
+  function notifyOther(type, title, text, extra = {}) {
+    if (!REMOTE) return;
+    fetch(notifyUrl(), { method: "POST", headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
+      body: JSON.stringify({ code, type, from: me, title, text, ...extra }) }).catch(() => {});
+  }
+  function describeEvent(e) {
+    const d = toD(e.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+    return `${d}${e.start_time ? " at " + fmtTime(e.start_time) : ""} · ${person(e.who).name}`;
+  }
+  const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  const b64ToBytes = s => { const b = atob((s + "===".slice((s.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+  async function pushSub() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  }
+  async function updateBell() {
+    const sub = await pushSub().catch(() => null);
+    $("bell").textContent = sub && Notification.permission === "granted" ? "🔔" : "🔕";
+  }
+  $("bell").onclick = async () => {
+    if (!REMOTE) { toast("Notifications need the shared database connected."); return; }
+    if (!("PushManager" in window) || !("Notification" in window)) {
+      toast(isIos && !standalone ? "Open the app from your Home Screen first, then tap the bell." : "This browser doesn't support notifications."); return;
+    }
+    try {
+      const existing = await pushSub();
+      if (existing && Notification.permission === "granted") {
+        if (!confirm("Turn off notifications on this phone?")) return;
+        await rpc("delete_push", { p_endpoint: existing.endpoint }).catch(() => {});
+        await existing.unsubscribe(); updateBell(); toast("Notifications off"); return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Notifications are blocked. Turn them on in Settings → Notifications → Our Schedule."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) });
+      await rpc("save_push", { p_person: me, p_sub: sub.toJSON(), p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      updateBell();
+      notifyOther("test", "Notifications are on 🍂", "You'll get reminders and a heads-up when things change.", { endpoint: sub.endpoint });
+      toast("Notifications on");
+    } catch (err) {
+      toast(err.badCode ? "Wrong passcode." : "Couldn't turn on notifications. Has supabase-notify.sql been run?");
+    }
+  };
+  updateBell();
 
   // ---------- editor ----------
   let editing = null, formWho = "both";
@@ -540,6 +591,7 @@
       events = events.filter(x => x.id !== tmpId).concat(saved);
       LS.set("events", events); setSync(REMOTE ? "" : "off"); render();
       toast(wasEditing ? "Saved" : "Added ✓");
+      notifyOther("change", `${person(me).name} ${wasEditing ? "updated" : "added"} ${saved.title}`, describeEvent(saved));
     } catch (err) {
       setSync("err"); toast("Couldn't save. Check your connection and try again."); refresh();
     }
@@ -552,7 +604,7 @@
     if (!confirm(msg)) return;
     closeSheet();
     events = events.filter(x => x.id !== e.id); render();
-    try { await api.remove(e.id); LS.set("events", events); toast("Deleted"); }
+    try { await api.remove(e.id); LS.set("events", events); toast("Deleted"); notifyOther("change", `${person(me).name} removed ${e.title}`, describeEvent(e)); }
     catch { toast("Couldn't delete. Try again."); refresh(); }
   };
 

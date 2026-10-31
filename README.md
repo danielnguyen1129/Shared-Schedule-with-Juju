@@ -27,3 +27,10 @@ Runs on Google Gemini through the Supabase Edge Function in `supabase/functions/
 1. Supabase → Edge Functions → Deploy a new function → Via Editor → name `ai-chat`, paste the file, Deploy.
 2. Edge Functions → Secrets → add `GEMINI_API_KEY` (from aistudio.google.com).
 3. Open the `ai-chat` function's settings and turn **off** "Verify JWT" (the passcode protects it).
+
+## Notifications
+Reminders (1 hour before timed events, 8am for all-day events, at a to-do's time) plus a heads-up when the other person changes something or writes in the Together chat.
+1. Run `supabase-notify.sql` in the SQL Editor (replace `YOUR-PASSCODE` first). It schedules a reminder check every 5 minutes.
+2. Deploy `supabase/functions/notify/index.ts` as an Edge Function named `notify`, with "Verify JWT" off.
+3. Add secrets `VAPID_PUBLIC_KEY` (same as in config.js) and `VAPID_PRIVATE_KEY`.
+4. On each iPhone, open the app from the Home Screen and tap the 🔕 bell.
