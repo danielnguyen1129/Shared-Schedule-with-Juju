@@ -238,13 +238,21 @@
     det.append(...dayMap.map(eventButton));
   }
 
-  function renderFilters() {
-    const el = $("filters"); el.innerHTML = "";
-    const opts = [{ id: "all", name: "All", color: "#9ca3af" }, ...PEOPLE.filter(p => p.id !== "both")];
+  // Bottom tabs: each person's own schedule, plus "Together" which merges both
+  const tabTitle = () => filter === "all" ? "Together" : `${person(filter).name}'s schedule`;
+  function renderTabs() {
+    const el = $("tabs"); el.innerHTML = "";
+    const solo = PEOPLE.filter(p => p.id !== "both");
+    const both = PEOPLE.find(p => p.id === "both") || { color: "#8b5cf6" };
+    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1]].filter(Boolean);
     for (const o of opts) {
-      const b = document.createElement("button"); b.className = "chip" + (filter === o.id ? " on" : ""); b.style.setProperty("--c", o.color);
-      b.textContent = o.name;
-      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderFilters(); render(); };
+      const b = document.createElement("button"); b.className = "tab" + (filter === o.id ? " on" : "");
+      b.style.setProperty("--c", o.color);
+      b.innerHTML = o.together
+        ? `<span class="tab-icon pair">${solo.map(p => `<span class="dot" style="--c:${p.color}"></span>`).join("")}</span>`
+        : `<span class="tab-icon"><span class="dot"></span></span>`;
+      const label = document.createElement("span"); label.className = "tab-label"; label.textContent = o.name; b.append(label);
+      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, 0); };
       el.append(b);
     }
   }
@@ -254,7 +262,7 @@
     $("month-view").classList.toggle("hidden", view !== "month");
     [...$("view-seg").children].forEach(b => b.classList.toggle("on", b.dataset.view === view));
     $("prev").disabled = $("next").disabled = view !== "month";
-    if (view === "list") { $("title").textContent = "Our Schedule"; renderList(); } else renderMonth();
+    if (view === "list") { $("title").textContent = tabTitle(); renderList(); } else renderMonth();
   }
 
   // ---------- editor ----------
@@ -263,7 +271,7 @@
     editing = e || null;
     $("sheet-title").textContent = e ? "Edit event" : "New event";
     $("f-title").value = e ? e.title : "";
-    formWho = e ? e.who : (me || "both");
+    formWho = e ? e.who : (filter !== "all" ? filter : "both");
     segButtons($("f-who"), PEOPLE, formWho, id => formWho = id);
     $("f-date").value = e ? e.date : (view === "month" ? selected : todayS());
     $("f-allday").checked = e ? !e.start_time : false;
@@ -386,7 +394,7 @@
   function startApp() {
     $("setup").classList.add("hidden"); $("app").classList.remove("hidden");
     setSync(REMOTE ? "" : "off");
-    renderFilters(); render(); refresh();
+    renderTabs(); render(); refresh();
     clearInterval(timer); timer = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 20000);
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (selected < todayS() && view === "list") render(); refresh(); } });
