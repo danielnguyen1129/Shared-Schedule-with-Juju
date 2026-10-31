@@ -275,25 +275,35 @@
     const el = $("tabs"); if (!el) return; el.innerHTML = "";
     const solo = PEOPLE.filter(p => p.id !== "both");
     const both = PEOPLE.find(p => p.id === "both") || { color: "#8b5cf6" };
-    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1], { id: "todo", name: "To-do", todo: true }].filter(Boolean);
+    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1], { id: "todo", name: "To-do", todo: true }, { id: "ai", name: "Ask", ai: true }].filter(Boolean);
     for (const o of opts) {
       const b = document.createElement("button"); b.className = "tab" + (filter === o.id ? " on" : "");
       b.style.setProperty("--c", o.color);
       b.innerHTML = o.together
         ? `<span class="tab-icon pair">${solo.map(p => `<span class="dot" style="--c:${p.color}"></span>`).join("")}</span>`
         : o.todo ? `<span class="tab-icon check">✓</span>`
+        : o.ai ? `<span class="tab-icon check">✦</span>`
         : `<span class="tab-icon"><span class="dot"></span></span>`;
       const label = document.createElement("span"); label.className = "tab-label"; label.textContent = o.name; b.append(label);
-      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, 0); };
+      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, o.ai ? document.body.scrollHeight : 0); };
       el.append(b);
     }
   }
 
   function render() {
-    const todo = filter === "todo";
-    $("todo-view").classList.toggle("hidden", !todo);
+    const ai = filter === "ai";
+    const todo = filter === "todo" || ai;
+    $("todo-view").classList.toggle("hidden", filter !== "todo");
+    $("ai-view").classList.toggle("hidden", !ai);
+    $("ai-new").classList.toggle("hidden", !ai);
+    $("sync").classList.toggle("hidden", ai);
     $("view-row").classList.toggle("hidden", todo);
     $("add").classList.toggle("hidden", todo);
+    if (ai) {
+      $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
+      $("prev").disabled = $("next").disabled = true;
+      $("title").textContent = `${person(me).name}'s assistant`; renderChat(false); return;
+    }
     if (todo) {
       $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
       $("prev").disabled = $("next").disabled = true;
@@ -355,6 +365,63 @@
     $("todo-text").value = ""; $("todo-start").value = ""; $("todo-end").value = "";
     $("todo-text").focus();
   };
+
+  // ---------- AI assistant (private per person: history is kept on this phone only) ----------
+  const chatKey = () => "chat." + (me || "x");
+  let chat = [];
+  let thinking = false;
+  const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const formatAi = s => escapeHtml(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+  function renderChat(scroll = true) {
+    chat = LS.get(chatKey(), []);
+    const log = $("ai-log"); log.innerHTML = "";
+    if (!chat.length) {
+      log.innerHTML = `<div class="empty">Hi ${escapeHtml(person(me).name)}! 🍂<br>Ask me anything, like<br><i>"When are we both free this week?"</i><br><i>"Cozy date ideas for Saturday?"</i><br><span class="small">This chat is just yours.</span></div>`;
+    }
+    for (const m of chat) {
+      const b = document.createElement("div"); b.className = "bubble " + (m.role === "user" ? "me" : "bot");
+      if (m.role === "user") b.textContent = m.content; else b.innerHTML = formatAi(m.content);
+      if (m.error) b.classList.add("err");
+      log.append(b);
+    }
+    if (thinking) { const t = document.createElement("div"); t.className = "bubble bot typing"; t.innerHTML = "<span></span><span></span><span></span>"; log.append(t); }
+    if (scroll) requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+  }
+  async function sendChat(text) {
+    if (!REMOTE) { toast("The assistant needs the shared database connected."); return; }
+    chat = LS.get(chatKey(), []).filter(m => !m.error);
+    chat.push({ role: "user", content: text }); LS.set(chatKey(), chat);
+    thinking = true; renderChat();
+    const n = new Date();
+    try {
+      const res = await fetch(`${CFG.supabaseUrl.replace(/\/$/, "")}/functions/v1/${CFG.aiFunction || "ai-chat"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
+        body: JSON.stringify({
+          code, person: me, today: todayS() + " (" + n.toLocaleDateString(undefined, { weekday: "long" }) + ")",
+          now: n.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          people: Object.fromEntries(PEOPLE.map(p => [p.id, p.name])),
+          messages: chat.map(({ role, content }) => ({ role, content })),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.text) throw new Error(data.error || (res.status === 404 ? "The assistant isn't set up in Supabase yet." : `Error ${res.status}`));
+      chat.push({ role: "assistant", content: data.text });
+    } catch (err) {
+      chat.push({ role: "assistant", content: "⚠ " + (err.message === "Failed to fetch" ? "Couldn't reach the assistant. Check your connection." : err.message), error: true });
+    }
+    LS.set(chatKey(), chat); thinking = false;
+    if (filter === "ai") renderChat();
+  }
+  const aiInput = $("ai-input");
+  const growInput = () => { aiInput.style.height = "auto"; aiInput.style.height = Math.min(aiInput.scrollHeight, 140) + "px"; };
+  aiInput.addEventListener("input", growInput);
+  $("ai-form").onsubmit = ev => {
+    ev.preventDefault();
+    const text = aiInput.value.trim(); if (!text || thinking) return;
+    aiInput.value = ""; growInput(); sendChat(text);
+  };
+  $("ai-new").onclick = () => { if (thinking) return; LS.set(chatKey(), []); renderChat(); };
 
   // ---------- editor ----------
   let editing = null, formWho = "both";

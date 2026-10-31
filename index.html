@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Our Schedule">
   <meta name="theme-color" content="#fbf1e3">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793466240">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793466462">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest?v=1793466240">
-  <link rel="stylesheet" href="styles.css?v=1793466240">
+  <link rel="manifest" href="manifest.webmanifest?v=1793466462">
+  <link rel="stylesheet" href="styles.css?v=1793466462">
 </head>
 <body>
   <!-- Setup / sign-in -->
@@ -38,6 +38,7 @@
         <h1 id="title">Our Schedule</h1>
         <button id="next" class="icon-btn" aria-label="Next month">›</button>
         <span id="sync" class="sync" title="Sync status"></span>
+        <button id="ai-new" class="link hidden">New</button>
       </div>
       <div class="top-row center" id="view-row">
         <div class="seg small" id="view-seg">
@@ -64,6 +65,14 @@
         </div>
       </form>
       <div id="todo-list"></div>
+    </section>
+
+    <section id="ai-view" class="view hidden">
+      <div id="ai-log" class="ai-log"></div>
+      <form id="ai-form" class="ai-form" autocomplete="off">
+        <textarea id="ai-input" rows="1" placeholder="Ask anything…" maxlength="4000"></textarea>
+        <button type="submit" class="ai-send" aria-label="Send">↑</button>
+      </form>
     </section>
 
     <button id="add" class="fab" aria-label="Add event">+</button>
@@ -108,7 +117,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="config.js?v=1793466240"></script>
-  <script src="app.js?v=1793466240"></script>
+  <script src="config.js?v=1793466462"></script>
+  <script src="app.js?v=1793466462"></script>
 </body>
 </html>
