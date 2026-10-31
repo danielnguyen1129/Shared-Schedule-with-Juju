@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Our Schedule">
   <meta name="theme-color" content="#fbf1e3">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793469910">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793477063">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest?v=1793469910">
-  <link rel="stylesheet" href="styles.css?v=1793469910">
+  <link rel="manifest" href="manifest.webmanifest?v=1793477063">
+  <link rel="stylesheet" href="styles.css?v=1793477063">
 </head>
 <body>
   <!-- Setup / sign-in -->
@@ -66,6 +66,19 @@
         </div>
       </form>
       <div id="todo-list"></div>
+    </section>
+
+    <section id="weather-view" class="view hidden">
+      <div class="wx-loc">
+        <button id="wx-place" class="wx-place">📍 <span id="wx-name">Choose a place</span> <span class="muted">▾</span></button>
+        <div class="seg small" id="wx-units"><button data-u="f">°F</button><button data-u="c">°C</button></div>
+      </div>
+      <div id="wx-search" class="wx-search hidden">
+        <input id="wx-q" class="big-input" placeholder="Search a city…" autocomplete="off" enterkeyhint="search">
+        <button id="wx-here" class="btn wide">📍 Use my current location</button>
+        <div id="wx-results"></div>
+      </div>
+      <div id="wx-body"></div>
     </section>
 
     <section id="ai-view" class="view hidden">
@@ -142,7 +155,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="config.js?v=1793469910"></script>
-  <script src="app.js?v=1793469910"></script>
+  <script src="config.js?v=1793477063"></script>
+  <script src="app.js?v=1793477063"></script>
 </body>
 </html>

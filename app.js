@@ -276,7 +276,7 @@
     const el = $("tabs"); if (!el) return; el.innerHTML = "";
     const solo = PEOPLE.filter(p => p.id !== "both");
     const both = PEOPLE.find(p => p.id === "both") || { color: "#8b5cf6" };
-    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1], { id: "todo", name: "To-do", todo: true }, { id: "ai", name: "Ask", ai: true }].filter(Boolean);
+    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1], { id: "todo", name: "To-do", todo: true }, { id: "weather", name: "Weather", wx: true }, { id: "ai", name: "Ask", ai: true }].filter(Boolean);
     for (const o of opts) {
       const b = document.createElement("button"); b.className = "tab" + (filter === o.id ? " on" : "");
       b.style.setProperty("--c", o.color);
@@ -284,17 +284,19 @@
         ? `<span class="tab-icon pair">${solo.map(p => `<span class="dot" style="--c:${p.color}"></span>`).join("")}</span>`
         : o.todo ? `<span class="tab-icon check">✓</span>`
         : o.ai ? `<span class="tab-icon check">✦</span>`
+        : o.wx ? `<span class="tab-icon check">☀︎</span>`
         : `<span class="tab-icon"><span class="dot"></span></span>`;
       const label = document.createElement("span"); label.className = "tab-label"; label.textContent = o.name; b.append(label);
-      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, o.ai ? document.body.scrollHeight : 0); if (o.ai) loadChat(); };
+      b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, o.ai ? document.body.scrollHeight : 0); if (o.ai) loadChat(); if (o.wx) loadWeather(); };
       el.append(b);
     }
   }
 
   function render() {
-    const ai = filter === "ai";
-    const todo = filter === "todo" || ai;
+    const ai = filter === "ai", wx = filter === "weather";
+    const todo = filter === "todo" || ai || wx;
     $("todo-view").classList.toggle("hidden", filter !== "todo");
+    $("weather-view").classList.toggle("hidden", !wx);
     $("ai-view").classList.toggle("hidden", !ai);
     $("ai-new").classList.toggle("hidden", !ai);
     $("sync").classList.toggle("hidden", ai);
@@ -304,6 +306,11 @@
       $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
       $("prev").disabled = $("next").disabled = true;
       $("title").textContent = "Assistant"; renderChat(false); return;
+    }
+    if (wx) {
+      $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
+      $("prev").disabled = $("next").disabled = true;
+      $("title").textContent = "Weather"; renderWeather(); return;
     }
     if (todo) {
       $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
@@ -315,6 +322,117 @@
     [...$("view-seg").children].forEach(b => b.classList.toggle("on", b.dataset.view === view));
     $("prev").disabled = $("next").disabled = view !== "month";
     if (view === "list") { $("title").textContent = tabTitle(); renderList(); } else renderMonth();
+  }
+
+  // ---------- weather (Open-Meteo: free, no key) ----------
+  const WMO = { 0: ["☀️", "Clear"], 1: ["🌤️", "Mostly clear"], 2: ["⛅", "Partly cloudy"], 3: ["☁️", "Cloudy"], 45: ["🌫️", "Fog"], 48: ["🌫️", "Freezing fog"],
+    51: ["🌦️", "Light drizzle"], 53: ["🌦️", "Drizzle"], 55: ["🌧️", "Heavy drizzle"], 56: ["🌧️", "Freezing drizzle"], 57: ["🌧️", "Freezing drizzle"],
+    61: ["🌦️", "Light rain"], 63: ["🌧️", "Rain"], 65: ["🌧️", "Heavy rain"], 66: ["🌧️", "Freezing rain"], 67: ["🌧️", "Freezing rain"],
+    71: ["🌨️", "Light snow"], 73: ["🌨️", "Snow"], 75: ["❄️", "Heavy snow"], 77: ["🌨️", "Snow grains"], 80: ["🌦️", "Showers"], 81: ["🌧️", "Showers"],
+    82: ["⛈️", "Heavy showers"], 85: ["🌨️", "Snow showers"], 86: ["❄️", "Snow showers"], 95: ["⛈️", "Thunderstorm"], 96: ["⛈️", "Thunderstorm, hail"], 99: ["⛈️", "Thunderstorm, hail"] };
+  const wmo = (c, day = 1) => { const w = WMO[c] || ["🌡️", "—"]; return !day && c <= 1 ? ["🌙", w[1]] : !day && c === 2 ? ["☁️", w[1]] : w; };
+  let wxUnit = LS.get("wx.unit", /^en-US/.test(navigator.language) ? "f" : "c");
+  let wxLoc = LS.get("wx.loc", null), wxData = LS.get("wx.data", null), wxLoading = false;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const deg = c => Math.round(wxUnit === "f" ? c * 9 / 5 + 32 : c) + "°";
+  const hourLabel = iso => { const h = +iso.slice(11, 13); return h === 0 ? "12am" : h < 12 ? h + "am" : h === 12 ? "12pm" : (h - 12) + "pm"; };
+
+  async function loadWeather(force) {
+    if (!wxLoc) { if (!LS.get("wx.asked", false)) { LS.set("wx.asked", true); useMyLocation(); } else renderWeather(); return; }
+    if (!force && wxData && wxData.key === `${wxLoc.lat},${wxLoc.lon}` && Date.now() - wxData.at < 15 * 60e3) return renderWeather();
+    wxLoading = true; renderWeather();
+    try {
+      const q = new URLSearchParams({ latitude: wxLoc.lat, longitude: wxLoc.lon, timezone: "auto", forecast_days: 7,
+        current: "temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,relative_humidity_2m,precipitation",
+        hourly: "temperature_2m,weather_code,precipitation_probability,is_day",
+        daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" });
+      const r = await fetch("https://api.open-meteo.com/v1/forecast?" + q);
+      if (!r.ok) throw new Error("weather " + r.status);
+      wxData = { key: `${wxLoc.lat},${wxLoc.lon}`, at: Date.now(), d: await r.json() }; LS.set("wx.data", wxData);
+    } catch { if (filter === "weather") toast("Couldn't load the weather. Check your connection."); }
+    wxLoading = false; renderWeather();
+  }
+  function setPlace(loc) { wxLoc = loc; LS.set("wx.loc", loc); $("wx-search").classList.add("hidden"); loadWeather(true); }
+  function useMyLocation() {
+    if (!navigator.geolocation) { openWxSearch(); return; }
+    wxLoading = true; renderWeather();
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const lat = +pos.coords.latitude.toFixed(3), lon = +pos.coords.longitude.toFixed(3);
+      let name = "My location";
+      try {
+        const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+        const j = await r.json(); name = j.city || j.locality || j.principalSubdivision || name;
+      } catch {}
+      setPlace({ lat, lon, name, here: true });
+    }, () => { wxLoading = false; toast("Location is off for this app, so search for your city instead."); openWxSearch(); },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 30 * 60e3 });
+  }
+  function openWxSearch() { $("wx-search").classList.remove("hidden"); $("wx-results").innerHTML = ""; $("wx-q").value = ""; renderWeather(); setTimeout(() => $("wx-q").focus(), 50); }
+  $("wx-place").onclick = () => $("wx-search").classList.contains("hidden") ? openWxSearch() : ($("wx-search").classList.add("hidden"), renderWeather());
+  $("wx-here").onclick = useMyLocation;
+  let wxTimer;
+  $("wx-q").oninput = () => {
+    clearTimeout(wxTimer);
+    const q = $("wx-q").value.trim(); if (q.length < 2) { $("wx-results").innerHTML = ""; return; }
+    wxTimer = setTimeout(async () => {
+      try {
+        const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&name=${encodeURIComponent(q)}`);
+        const list = (await r.json()).results || [];
+        const el = $("wx-results"); el.innerHTML = list.length ? "" : `<p class="muted small">No places found.</p>`;
+        for (const p of list) {
+          const b = document.createElement("button"); b.className = "wx-result";
+          const sub = [p.admin1, p.country].filter(Boolean).join(", ");
+          b.innerHTML = `<strong>${esc(p.name)}</strong> <span class="muted">${esc(sub)}</span>`;
+          b.onclick = () => setPlace({ lat: p.latitude, lon: p.longitude, name: p.name });
+          el.append(b);
+        }
+      } catch { $("wx-results").innerHTML = `<p class="muted small">Couldn't search. Check your connection.</p>`; }
+    }, 300);
+  };
+  [...$("wx-units").children].forEach(b => b.onclick = () => { wxUnit = b.dataset.u; LS.set("wx.unit", wxUnit); renderWeather(); });
+
+  function renderWeather() {
+    [...$("wx-units").children].forEach(b => b.classList.toggle("on", b.dataset.u === wxUnit));
+    $("wx-name").textContent = wxLoc ? wxLoc.name : "Choose a place";
+    const el = $("wx-body");
+    if (!$("wx-search").classList.contains("hidden")) { el.innerHTML = ""; return; }
+    if (!wxLoc) { el.innerHTML = wxLoading ? `<div class="empty">Finding you…</div>` : `<div class="empty">Tap “Choose a place” above to see the weather.</div>`; return; }
+    if (!wxData || wxData.key !== `${wxLoc.lat},${wxLoc.lon}`) { el.innerHTML = `<div class="empty">${wxLoading ? "Loading…" : "No weather yet."}</div>`; return; }
+    const d = wxData.d, c = d.current, [icon, text] = wmo(c.weather_code, c.is_day);
+    const nowIso = c.time.slice(0, 13);
+    let start = d.hourly.time.findIndex(t => t.slice(0, 13) >= nowIso); if (start < 0) start = 0;
+    const hours = d.hourly.time.slice(start, start + 24).map((t, i) => {
+      const j = start + i, [hi] = wmo(d.hourly.weather_code[j], d.hourly.is_day[j]), p = d.hourly.precipitation_probability[j];
+      return `<div class="wx-hour"><span class="muted small">${i ? hourLabel(t) : "Now"}</span><span class="wx-hi">${hi}</span>${p >= 20 ? `<span class="wx-rain">${p}%</span>` : `<span class="wx-rain"></span>`}<strong>${deg(d.hourly.temperature_2m[j])}</strong></div>`;
+    }).join("");
+    const lo = Math.min(...d.daily.temperature_2m_min), hiT = Math.max(...d.daily.temperature_2m_max), span = hiT - lo || 1;
+    const days = d.daily.time.map((t, i) => {
+      const [di, dt] = wmo(d.daily.weather_code[i]), p = d.daily.precipitation_probability_max[i];
+      const name = i === 0 ? "Today" : toD(t).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+      const a = (d.daily.temperature_2m_min[i] - lo) / span * 100, b = (d.daily.temperature_2m_max[i] - lo) / span * 100;
+      const plans = events.filter(e => e.repeat !== "todo" && occurrences(e, t, t).length).length;
+      return `<div class="wx-day"><span class="wx-dname">${name}${plans ? `<span class="wx-plans">${plans} plan${plans > 1 ? "s" : ""}</span>` : ""}</span><span class="wx-dicon" title="${esc(dt)}">${di}</span>
+        <span class="wx-rain">${p >= 20 ? p + "%" : ""}</span><span class="muted">${deg(d.daily.temperature_2m_min[i])}</span>
+        <span class="wx-bar"><i style="left:${a}%;right:${100 - b}%"></i></span><strong>${deg(d.daily.temperature_2m_max[i])}</strong></div>`;
+    }).join("");
+    const t = d.daily, sun = s => fmtTime(s.slice(11, 16));
+    const ago = Math.round((Date.now() - wxData.at) / 60e3);
+    el.innerHTML = `
+      <div class="wx-now">
+        <div class="wx-big">${icon}<span>${deg(c.temperature_2m)}</span></div>
+        <div class="wx-text">${esc(text)}</div>
+        <div class="muted">H ${deg(t.temperature_2m_max[0])} · L ${deg(t.temperature_2m_min[0])} · Feels like ${deg(c.apparent_temperature)}</div>
+      </div>
+      <div class="wx-card wx-hours">${hours}</div>
+      <div class="wx-card">${days}</div>
+      <div class="wx-card wx-facts">
+        <div><span class="muted small">Wind</span><strong>${Math.round(wxUnit === "f" ? c.wind_speed_10m / 1.609 : c.wind_speed_10m)} ${wxUnit === "f" ? "mph" : "km/h"}</strong></div>
+        <div><span class="muted small">Humidity</span><strong>${c.relative_humidity_2m}%</strong></div>
+        <div><span class="muted small">Sunrise</span><strong>${sun(t.sunrise[0])}</strong></div>
+        <div><span class="muted small">Sunset</span><strong>${sun(t.sunset[0])}</strong></div>
+      </div>
+      <p class="muted small wx-foot">${wxLoading ? "Updating…" : `Updated ${ago < 1 ? "just now" : ago + " min ago"}`} · <button class="link" id="wx-refresh">Refresh</button> · Open-Meteo</p>`;
+    $("wx-refresh").onclick = () => loadWeather(true);
   }
 
   // ---------- to-do list ----------
