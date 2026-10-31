@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Our Schedule</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Our Schedule">
+  <meta name="theme-color" content="#fdf7f2">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Setup / sign-in -->
+  <section id="setup" class="setup hidden">
+    <img src="icons/icon-192.png" alt="" class="setup-logo">
+    <h1>Our Schedule</h1>
+    <p class="muted">Who's using this phone?</p>
+    <div class="seg" id="setup-who"></div>
+    <label id="code-wrap" class="field">
+      <span>Shared passcode</span>
+      <input id="setup-code" type="password" autocomplete="current-password" placeholder="Passcode">
+    </label>
+    <p id="setup-error" class="error"></p>
+    <button id="setup-go" class="btn primary wide">Open schedule</button>
+    <p id="demo-note" class="muted small hidden">Demo mode: events are only saved on this device until the shared database is connected.</p>
+  </section>
+
+  <!-- Main app -->
+  <main id="app" class="hidden">
+    <header class="top">
+      <div class="top-row">
+        <button id="prev" class="icon-btn" aria-label="Previous month">‹</button>
+        <h1 id="title">Our Schedule</h1>
+        <button id="next" class="icon-btn" aria-label="Next month">›</button>
+        <span id="sync" class="sync" title="Sync status"></span>
+      </div>
+      <div class="top-row">
+        <div class="seg small" id="view-seg">
+          <button data-view="list" class="on">Upcoming</button>
+          <button data-view="month">Month</button>
+        </div>
+        <div class="chips" id="filters"></div>
+      </div>
+    </header>
+
+    <section id="list-view" class="view"></section>
+    <section id="month-view" class="view hidden">
+      <div class="dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="grid" id="grid"></div>
+      <div id="day-detail"></div>
+    </section>
+
+    <button id="add" class="fab" aria-label="Add event">+</button>
+  </main>
+
+  <!-- Event editor sheet -->
+  <div id="sheet-bg" class="sheet-bg hidden"></div>
+  <form id="sheet" class="sheet hidden" autocomplete="off">
+    <div class="sheet-head">
+      <button type="button" id="cancel" class="link">Cancel</button>
+      <strong id="sheet-title">New event</strong>
+      <button type="submit" class="link bold">Save</button>
+    </div>
+    <div class="sheet-body">
+      <input id="f-title" class="big-input" placeholder="What's happening?" required maxlength="120">
+      <div class="seg" id="f-who"></div>
+      <label class="field"><span>Date</span><input id="f-date" type="date" required></label>
+      <label class="field row"><span>All day</span><input id="f-allday" type="checkbox" class="toggle"></label>
+      <div id="times" class="two">
+        <label class="field"><span>Starts</span><input id="f-start" type="time"></label>
+        <label class="field"><span>Ends</span><input id="f-end" type="time"></label>
+      </div>
+      <label class="field"><span>Ends on another day? <em class="muted">(optional, for trips)</em></span><input id="f-enddate" type="date"></label>
+      <label class="field"><span>Repeat</span>
+        <select id="f-repeat">
+          <option value="none">Never</option>
+          <option value="daily">Every day</option>
+          <option value="weekly">Every week</option>
+          <option value="biweekly">Every 2 weeks</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
+      </label>
+      <p id="repeat-note" class="muted small hidden">Changes apply to every repeat of this event.</p>
+      <label class="field"><span>Where</span><input id="f-location" placeholder="Optional" maxlength="200"></label>
+      <label class="field"><span>Notes</span><textarea id="f-notes" rows="3" placeholder="Optional" maxlength="2000"></textarea></label>
+      <p id="f-meta" class="muted small"></p>
+      <button type="button" id="delete" class="btn danger wide hidden">Delete event</button>
+    </div>
+  </form>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
