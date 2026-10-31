@@ -241,7 +241,7 @@
   // Bottom tabs: each person's own schedule, plus "Together" which merges both
   const tabTitle = () => filter === "all" ? "Together" : `${person(filter).name}'s schedule`;
   function renderTabs() {
-    const el = $("tabs"); el.innerHTML = "";
+    const el = $("tabs"); if (!el) return; el.innerHTML = "";
     const solo = PEOPLE.filter(p => p.id !== "both");
     const both = PEOPLE.find(p => p.id === "both") || { color: "#8b5cf6" };
     const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1]].filter(Boolean);
