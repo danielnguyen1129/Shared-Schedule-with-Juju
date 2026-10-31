@@ -8,11 +8,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Our Schedule">
-  <meta name="theme-color" content="#fdf7f2">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793465952">
+  <meta name="theme-color" content="#fbf1e3">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793466240">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest?v=1793465952">
-  <link rel="stylesheet" href="styles.css?v=1793465952">
+  <link rel="manifest" href="manifest.webmanifest?v=1793466240">
+  <link rel="stylesheet" href="styles.css?v=1793466240">
 </head>
 <body>
   <!-- Setup / sign-in -->
@@ -39,7 +39,7 @@
         <button id="next" class="icon-btn" aria-label="Next month">›</button>
         <span id="sync" class="sync" title="Sync status"></span>
       </div>
-      <div class="top-row center">
+      <div class="top-row center" id="view-row">
         <div class="seg small" id="view-seg">
           <button data-view="list" class="on">Upcoming</button>
           <button data-view="month">Month</button>
@@ -52,6 +52,18 @@
       <div class="dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="grid" id="grid"></div>
       <div id="day-detail"></div>
+    </section>
+
+    <section id="todo-view" class="view hidden">
+      <form id="todo-form" class="todo-form" autocomplete="off">
+        <input id="todo-text" class="big-input" placeholder="What are we doing?" maxlength="200" required>
+        <div class="todo-row">
+          <label class="field"><span>From</span><input id="todo-start" type="time"></label>
+          <label class="field"><span>To</span><input id="todo-end" type="time"></label>
+          <button type="submit" class="btn primary">Add</button>
+        </div>
+      </form>
+      <div id="todo-list"></div>
     </section>
 
     <button id="add" class="fab" aria-label="Add event">+</button>
@@ -96,7 +108,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="config.js?v=1793465952"></script>
-  <script src="app.js?v=1793465952"></script>
+  <script src="config.js?v=1793466240"></script>
+  <script src="app.js?v=1793466240"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 // Network-first for app files so updates show up right away; falls back to cache offline.
-const CACHE = "our-schedule-v6";
+const CACHE = "our-schedule-v7";
 const FILES = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => {

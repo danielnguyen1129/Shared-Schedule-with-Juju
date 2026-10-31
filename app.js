@@ -72,6 +72,7 @@
   function buildDays(events, from, to) {
     const map = {};
     for (const e of events) {
+      if (e.repeat === "todo") continue;
       if (filter !== "all" && e.who !== filter && e.who !== "both") continue;
       const dur = e.end_date && e.end_date > e.date ? diffDays(e.date, e.end_date) : 0;
       for (const s of occurrences(e, from, to)) {
@@ -274,12 +275,13 @@
     const el = $("tabs"); if (!el) return; el.innerHTML = "";
     const solo = PEOPLE.filter(p => p.id !== "both");
     const both = PEOPLE.find(p => p.id === "both") || { color: "#8b5cf6" };
-    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1]].filter(Boolean);
+    const opts = [solo[0], { id: "all", name: "Together", color: both.color, together: true }, solo[1], { id: "todo", name: "To-do", todo: true }].filter(Boolean);
     for (const o of opts) {
       const b = document.createElement("button"); b.className = "tab" + (filter === o.id ? " on" : "");
       b.style.setProperty("--c", o.color);
       b.innerHTML = o.together
         ? `<span class="tab-icon pair">${solo.map(p => `<span class="dot" style="--c:${p.color}"></span>`).join("")}</span>`
+        : o.todo ? `<span class="tab-icon check">✓</span>`
         : `<span class="tab-icon"><span class="dot"></span></span>`;
       const label = document.createElement("span"); label.className = "tab-label"; label.textContent = o.name; b.append(label);
       b.onclick = () => { filter = o.id; LS.set("filter", filter); renderTabs(); render(); window.scrollTo(0, 0); };
@@ -288,12 +290,71 @@
   }
 
   function render() {
+    const todo = filter === "todo";
+    $("todo-view").classList.toggle("hidden", !todo);
+    $("view-row").classList.toggle("hidden", todo);
+    $("add").classList.toggle("hidden", todo);
+    if (todo) {
+      $("list-view").classList.add("hidden"); $("month-view").classList.add("hidden");
+      $("prev").disabled = $("next").disabled = true;
+      $("title").textContent = "To-do list"; renderTodos(); return;
+    }
     $("list-view").classList.toggle("hidden", view !== "list");
     $("month-view").classList.toggle("hidden", view !== "month");
     [...$("view-seg").children].forEach(b => b.classList.toggle("on", b.dataset.view === view));
     $("prev").disabled = $("next").disabled = view !== "month";
     if (view === "list") { $("title").textContent = tabTitle(); renderList(); } else renderMonth();
   }
+
+  // ---------- to-do list ----------
+  // To-dos live in the same events table so no extra database setup is needed:
+  // repeat = "todo", title = the task, start/end_time = time slot, notes = "done" when ticked.
+  function renderTodos() {
+    const el = $("todo-list"); el.innerHTML = "";
+    const todos = events.filter(e => e.repeat === "todo");
+    const byTime = (a, b) => (a.start_time || "99").localeCompare(b.start_time || "99") || (a.created_at || "").localeCompare(b.created_at || "");
+    const open = todos.filter(t => t.notes !== "done").sort(byTime);
+    const done = todos.filter(t => t.notes === "done").sort(byTime);
+    if (!todos.length) { el.innerHTML = `<div class="empty">Nothing on the list yet.<br>Add what you're up to above.</div>`; return; }
+    const row = t => {
+      const r = document.createElement("div"); r.className = "todo" + (t.notes === "done" ? " done" : "");
+      r.style.setProperty("--c", person(t.created_by || t.who).color);
+      r.innerHTML = `<button class="tick" aria-label="Done"></button><span class="todo-time"></span><span class="todo-text"></span><button class="todo-del" aria-label="Delete">×</button>`;
+      r.querySelector(".todo-time").textContent = t.start_time ? fmtTime(t.start_time) + (t.end_time ? "–" + fmtTime(t.end_time) : "") : "";
+      r.querySelector(".todo-text").textContent = t.title;
+      r.querySelector(".tick").onclick = () => saveTodo({ ...t, notes: t.notes === "done" ? null : "done" });
+      r.querySelector(".todo-del").onclick = () => removeTodo(t);
+      return r;
+    };
+    el.append(...open.map(row));
+    if (done.length) {
+      const h = document.createElement("div"); h.className = "day-head todo-done-head"; h.textContent = `Done (${done.length})`;
+      const clr = document.createElement("button"); clr.className = "link"; clr.textContent = "Clear";
+      clr.onclick = async () => { for (const t of done) await removeTodo(t, true); toast("Cleared"); };
+      h.append(clr); el.append(h, ...done.map(row));
+    }
+  }
+  async function saveTodo(t) {
+    const tmpId = t.id || "tmp-" + Math.random();
+    events = events.filter(x => x.id !== tmpId).concat({ ...t, id: tmpId }); render();
+    try {
+      const saved = normalize(await api.save(t));
+      events = events.filter(x => x.id !== tmpId).concat(saved); LS.set("events", events); render();
+    } catch { toast("Couldn't save. Check your connection."); refresh(); }
+  }
+  async function removeTodo(t, quiet) {
+    events = events.filter(x => x.id !== t.id); render();
+    try { await api.remove(t.id); LS.set("events", events); }
+    catch { if (!quiet) toast("Couldn't delete. Try again."); refresh(); }
+  }
+  $("todo-form").onsubmit = ev => {
+    ev.preventDefault();
+    const text = $("todo-text").value.trim(); if (!text) return;
+    const start = $("todo-start").value || null, end = start && $("todo-end").value > start ? $("todo-end").value : null;
+    saveTodo({ title: text, date: todayS(), start_time: start, end_time: end, repeat: "todo", who: me || "both", created_by: me, notes: null });
+    $("todo-text").value = ""; $("todo-start").value = ""; $("todo-end").value = "";
+    $("todo-text").focus();
+  };
 
   // ---------- editor ----------
   let editing = null, formWho = "both";
