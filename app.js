@@ -238,7 +238,7 @@
 
   function renderMonth() {
     const [y, m] = cursor.split("-").map(Number);
-    $("title").textContent = `${MONTHS[m - 1]}${y !== new Date().getFullYear() ? " " + y : ""}`;
+    $("title").textContent = `${MONTHS[m - 1]} ${y}`;
     const first = `${cursor}-01`, startPad = toD(first).getUTCDay();
     const gridStart = addDays(first, -startPad);
     const cells = Math.ceil((startPad + daysInMonth(y, m - 1)) / 7) * 7;
