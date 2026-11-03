@@ -814,6 +814,20 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (selected < todayS() && view === "list") render(); refresh(); } });
   window.addEventListener("online", refresh);
   $("sync").onclick = () => { if (REMOTE) { toast("Syncing…"); refresh(); } else toast("Demo mode: saved on this device only"); };
+  // Theme: tap the palette to switch between Gingham and Fall (saved per phone)
+  const THEMES = [["gingham", "Beige gingham 🤎"], ["fall", "Fall 🍂"]];
+  function applyTheme(t) {
+    document.documentElement.dataset.theme = t;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg || "#f4ecdd");
+  }
+  applyTheme(LS.get("theme", "gingham"));
+  $("theme-btn").onclick = () => {
+    const cur = LS.get("theme", "gingham"), i = THEMES.findIndex(t => t[0] === cur);
+    const next = THEMES[(i + 1) % THEMES.length];
+    LS.set("theme", next[0]); applyTheme(next[0]); toast(next[1] + " theme");
+  };
+
   // Long-press title to switch user / passcode
   let lp; $("title").addEventListener("touchstart", () => lp = setTimeout(() => showSetup(), 800), { passive: true });
   $("title").addEventListener("touchend", () => clearTimeout(lp));

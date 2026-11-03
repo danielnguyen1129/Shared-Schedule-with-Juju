@@ -138,8 +138,8 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 .cell.has-clash.sel .n { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ef4444; }
 
 /* Fall touches */
-.top { background: linear-gradient(var(--bg), color-mix(in srgb, var(--bg) 92%, #f59e0b)); }
-.day-head.today::before { content: "🍂 "; }
+:root[data-theme="fall"] .top { background: linear-gradient(var(--bg), color-mix(in srgb, var(--bg) 92%, #f59e0b)); }
+:root[data-theme="fall"] .day-head.today::before { content: "🍂 "; }
 .event { box-shadow: 0 1px 2px rgba(120,53,15,.08); }
 
 /* To-do tab */
@@ -217,3 +217,28 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 .wx-foot { text-align: center; margin: 14px 0 0; }
 .wx-foot .link { font-size: inherit; padding: 0; }
 .tab { font-size: 11px; }
+
+/* Beige gingham theme */
+:root[data-theme="gingham"] {
+  --bg: #f4ecdd; --card: #fffcf5; --ink: #4a3b2c; --muted: #9a8670; --line: #e6d9c3; --accent: #a8754a;
+  --check: rgba(196, 168, 128, .2);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="gingham"] { --bg: #221c16; --card: #2f2720; --ink: #f3e8d6; --muted: #b5a088; --line: #40362c; --accent: #d1a072;
+    --check: rgba(232, 210, 175, .045); }
+}
+:root[data-theme="gingham"] body {
+  background-color: var(--bg);
+  background-image: linear-gradient(90deg, var(--check) 50%, transparent 50%), linear-gradient(var(--check) 50%, transparent 50%);
+  background-size: 26px 26px;
+}
+:root[data-theme="gingham"] .top { background: color-mix(in srgb, var(--bg) 90%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line); }
+:root[data-theme="gingham"] .fab { box-shadow: 0 8px 24px rgba(120, 85, 50, .35); }
+:root[data-theme="gingham"] .event, :root[data-theme="gingham"] .todo, :root[data-theme="gingham"] .bubble.bot { box-shadow: 0 1px 3px rgba(90, 65, 40, .1); }
+:root[data-theme="gingham"] .toggle { background: var(--line); }
+:root[data-theme="gingham"] .toggle:checked { background: #8fae7e; }
+:root[data-theme="gingham"] .day-head.today::before { content: "🧺 "; }
+:root[data-theme="gingham"] .wx-bar i { background: linear-gradient(90deg, #d8b98f, var(--accent)); }
+:root[data-theme="gingham"] .sheet { background: var(--bg);
+  background-image: linear-gradient(90deg, var(--check) 50%, transparent 50%), linear-gradient(var(--check) 50%, transparent 50%); background-size: 26px 26px; }
