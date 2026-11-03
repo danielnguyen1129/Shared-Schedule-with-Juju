@@ -68,9 +68,42 @@
     return out;
   }
 
+  // ---------- US holidays (computed on the phone, nothing stored) ----------
+  const nthDow = (y, m, dow, n) => { // n-th weekday of month (n = -1 for last)
+    if (n > 0) { const f = new Date(Date.UTC(y, m, 1)).getUTCDay(); return 1 + ((dow - f + 7) % 7) + (n - 1) * 7; }
+    const last = daysInMonth(y, m), l = new Date(Date.UTC(y, m, last)).getUTCDay(); return last - ((l - dow + 7) % 7);
+  };
+  function easter(y) { // Anonymous Gregorian algorithm
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25),
+      g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4,
+      l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31);
+    return [mo - 1, ((h + l - 7 * m + 114) % 31) + 1];
+  }
+  const holidayCache = {};
+  function holidaysFor(y) {
+    if (holidayCache[y]) return holidayCache[y];
+    const ds = (m, d) => `${y}-${pad(m + 1)}-${pad(d)}`, [em, ed] = easter(y);
+    const list = [
+      [ds(0, 1), "🎉 New Year's Day"], [ds(0, nthDow(y, 0, 1, 3)), "✊ Martin Luther King Jr. Day"],
+      [ds(1, 14), "💝 Valentine's Day"], [ds(1, nthDow(y, 1, 1, 3)), "🇺🇸 Presidents' Day"],
+      [ds(2, 17), "☘️ St. Patrick's Day"], [ds(em, ed), "🐣 Easter"],
+      [ds(4, nthDow(y, 4, 0, 2)), "💐 Mother's Day"], [ds(4, nthDow(y, 4, 1, -1)), "🇺🇸 Memorial Day"],
+      [ds(5, nthDow(y, 5, 0, 3)), "👔 Father's Day"], [ds(5, 19), "✊🏿 Juneteenth"], [ds(6, 4), "🎆 Independence Day"],
+      [ds(8, nthDow(y, 8, 1, 1)), "🛠️ Labor Day"], [ds(9, 31), "🎃 Halloween"], [ds(10, 11), "🎖️ Veterans Day"],
+      [ds(10, nthDow(y, 10, 4, 4)), "🦃 Thanksgiving"], [ds(11, 24), "🎄 Christmas Eve"], [ds(11, 25), "🎄 Christmas"],
+      [ds(11, 31), "🥂 New Year's Eve"],
+    ];
+    const map = {};
+    for (const [d, t] of list) (map[d] ||= []).push(t);
+    return (holidayCache[y] = map);
+  }
+  const holidaysOn = day => LS.get("holidays", true) ? (holidaysFor(+day.slice(0, 4))[day] || []) : [];
+
   // Map of day -> [{e, start}] for range
   function buildDays(events, from, to) {
     const map = {};
+    for (let day = from; day <= to; day = addDays(day, 1))
+      for (const t of holidaysOn(day)) (map[day] ||= []).push({ e: { id: "hol-" + day + t, title: t, who: "both", holiday: true }, start: day, idx: 0, dur: 0 });
     for (const e of events) {
       if (e.repeat === "todo") continue;
       if (filter !== "all" && e.who !== filter && e.who !== "both") continue;
@@ -85,7 +118,7 @@
     }
     for (const k in map) map[k].sort((a, b) => {
       const at = a.idx > 0 ? "" : (a.e.start_time || ""), bt = b.idx > 0 ? "" : (b.e.start_time || "");
-      return at.localeCompare(bt) || a.e.title.localeCompare(b.e.title);
+      return (b.e.holiday ? 1 : 0) - (a.e.holiday ? 1 : 0) || at.localeCompare(bt) || a.e.title.localeCompare(b.e.title);
     });
     markClashes(map);
     return map;
@@ -189,6 +222,10 @@
   }
 
   function eventButton({ e, start, idx, dur, clash }) {
+    if (e.holiday) {
+      const b = document.createElement("div"); b.className = "holiday";
+      b.textContent = e.title; return b;
+    }
     const p = person(e.who);
     const b = document.createElement("button"); b.className = "event" + (clash && clash.length ? " clash" : ""); b.style.setProperty("--c", p.color);
     let time;
@@ -254,7 +291,9 @@
       c.className = "cell" + (d.slice(0, 7) !== cursor ? " other" : "") + (d === t ? " today" : "") + (d === selected ? " sel" : "");
       c.innerHTML = `<span class="n">${Number(d.slice(8))}</span><span class="dots"></span>`;
       const seen = new Set();
-      for (const it of (map[d] || []).slice(0, 6)) {
+      const hol = (map[d] || []).find(it => it.e.holiday);
+      if (hol) { c.classList.add("has-holiday"); c.title = hol.e.title; const em = document.createElement("span"); em.className = "hol-emoji"; em.textContent = [...hol.e.title][0]; c.querySelector(".dots").append(em); }
+      for (const it of (map[d] || []).filter(it => !it.e.holiday).slice(0, 6)) {
         const dot = document.createElement("span"); dot.className = "dot"; dot.style.setProperty("--c", person(it.e.who).color);
         if (!seen.has(it.e.id)) { seen.add(it.e.id); c.querySelector(".dots").append(dot); }
       }
