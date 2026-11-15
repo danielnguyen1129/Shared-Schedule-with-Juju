@@ -36,7 +36,7 @@ export function buildSystem(rows: Ev[], names: Record<string, string>, me: strin
     const extra = [e.location && `at ${e.location}`, e.notes && `notes: ${e.notes}`].filter(Boolean).join("; ");
     return `- ${e.date}${span}${time}${rep} · ${names[e.who] ?? e.who} · ${e.title}${extra ? ` (${extra})` : ""}`;
   };
-  const events = rows.filter((e) => e.repeat !== "todo").map(fmt).join("\n") || "(nothing scheduled)";
+  const events = rows.filter((e) => e.repeat !== "todo" && e.repeat !== "timer").map(fmt).join("\n") || "(nothing scheduled)";
   const todos = rows.filter((e) => e.repeat === "todo").map((x) =>
     `- [${x.notes === "done" ? "x" : " "}] ${x.start_time ? t(x.start_time) + (x.end_time ? "-" + t(x.end_time) : "") + " " : ""}${x.title}`
   ).join("\n") || "(empty)";

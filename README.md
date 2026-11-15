@@ -34,3 +34,7 @@ Reminders: tap the bell to choose 1 day, 1 hour, 5 minutes and/or 1 minute befor
 2. Deploy `supabase/functions/notify/index.ts` as an Edge Function named `notify`, with "Verify JWT" off.
 3. Add secrets `VAPID_PUBLIC_KEY` (same as in config.js) and `VAPID_PRIVATE_KEY`.
 4. On each iPhone, open the app from the Home Screen and tap the 🔕 bell.
+
+## Timers
+Tap the ⏱️ button (bottom left) to start a timer: pick a length, give it a name if you like, and choose whether the alert goes to **just you** or **both of you**. The other person gets a heads-up as soon as you start one, and both phones can see the countdown.
+Timers are saved in the same `events` table (`repeat = 'timer'`), so no new SQL is needed. The alert is sent by the `notify` function: the phone pings it the moment a timer ends, and the every-minute cron job also catches timers that end while both phones are closed. After updating `supabase/functions/notify/index.ts`, redeploy it (Edge Functions → notify → paste the new file → Deploy).

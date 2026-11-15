@@ -105,7 +105,7 @@
     for (let day = from; day <= to; day = addDays(day, 1))
       for (const t of holidaysOn(day)) (map[day] ||= []).push({ e: { id: "hol-" + day + t, title: t, who: "both", holiday: true }, start: day, idx: 0, dur: 0 });
     for (const e of events) {
-      if (e.repeat === "todo") continue;
+      if (e.repeat === "todo" || e.repeat === "timer") continue;
       if (filter !== "all" && e.who !== filter && e.who !== "both") continue;
       const dur = e.end_date && e.end_date > e.date ? diffDays(e.date, e.end_date) : 0;
       for (const s of occurrences(e, from, to)) {
@@ -333,6 +333,8 @@
 
   function render() {
     const ai = filter === "ai", wx = filter === "weather";
+    $("timer-btn").classList.toggle("hidden", ai);
+    if (!$("tsheet").classList.contains("hidden")) renderTimerList();
     const todo = filter === "todo" || ai || wx;
     $("todo-view").classList.toggle("hidden", filter !== "todo");
     $("weather-view").classList.toggle("hidden", !wx);
@@ -449,7 +451,7 @@
       const [di, dt] = wmo(d.daily.weather_code[i]), p = d.daily.precipitation_probability_max[i];
       const name = i === 0 ? "Today" : toD(t).toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
       const a = (d.daily.temperature_2m_min[i] - lo) / span * 100, b = (d.daily.temperature_2m_max[i] - lo) / span * 100;
-      const plans = events.filter(e => e.repeat !== "todo" && occurrences(e, t, t).length).length;
+      const plans = events.filter(e => e.repeat !== "todo" && e.repeat !== "timer" && occurrences(e, t, t).length).length;
       return `<div class="wx-day"><span class="wx-dname">${name}${plans ? `<span class="wx-plans">${plans} plan${plans > 1 ? "s" : ""}</span>` : ""}</span><span class="wx-dicon" title="${esc(dt)}">${di}</span>
         <span class="wx-rain">${p >= 20 ? p + "%" : ""}</span><span class="muted">${deg(d.daily.temperature_2m_min[i])}</span>
         <span class="wx-bar"><i style="left:${a}%;right:${100 - b}%"></i></span><strong>${deg(d.daily.temperature_2m_max[i])}</strong></div>`;
@@ -715,6 +717,133 @@
     const sub = await pushSub().catch(() => null);
     if (sub) { await rpc("delete_push", { p_endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
     closeNotifSheet(); updateBell(); toast("Notifications off");
+  };
+
+  // ---------- timers ----------
+  // Timers live in the events table too, so no extra database setup is needed:
+  // repeat = "timer", title = its name, who = who gets the alert ("both" or the starter),
+  // created_by = the starter, notes = {"end": epoch ms, "dur": seconds}.
+  // The notify function sends the alert (pg_cron checks every minute, and the phone pings it the moment a timer ends).
+  const tInfo = e => { try { const j = JSON.parse(e.notes || "{}"); return { end: +j.end || 0, dur: +j.dur || 0 }; } catch { return { end: 0, dur: 0 }; } };
+  const timers = () => events.filter(e => e.repeat === "timer").map(e => ({ e, ...tInfo(e) })).filter(t => t.end).sort((a, b) => a.end - b.end);
+  const fmtLeft = ms => { const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`; };
+  const fmtDur = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return [h && h + " hr", m && m + " min", x && x + " sec"].filter(Boolean).join(" "); };
+  const clock = ms => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const named = e => e.title && e.title !== "Timer";
+  const otherPerson = () => PEOPLE.find(p => p.id !== "both" && p.id !== me) || { name: "The other person" };
+  const forMe = t => t.e.who === "both" || t.e.created_by === me;
+  let timerWho = LS.get("timer.who", "me");
+  let rang = new Set(LS.get("timer.rang", []));
+
+  // Sound: phones only allow audio after a tap, so unlock it on the first touch.
+  let actx = null;
+  function unlockAudio() {
+    try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === "suspended") actx.resume(); } catch { /* no audio */ }
+  }
+  document.addEventListener("touchend", unlockAudio, { passive: true });
+  document.addEventListener("click", unlockAudio);
+  function chime() {
+    if (!actx) return;
+    const t0 = actx.currentTime + 0.05;
+    for (let i = 0; i < 8; i++) {
+      const o = actx.createOscillator(), g = actx.createGain(), st = t0 + Math.floor(i / 2) * 0.9 + (i % 2) * 0.22;
+      o.type = "sine"; o.frequency.value = i % 2 ? 1175 : 880;
+      g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.35, st + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, st + 0.2);
+      o.connect(g).connect(actx.destination); o.start(st); o.stop(st + 0.22);
+    }
+  }
+  function pingTimers() {
+    if (!REMOTE) return;
+    fetch(notifyUrl(), { method: "POST", headers: { "Content-Type": "application/json", apikey: CFG.supabaseAnonKey },
+      body: JSON.stringify({ code, type: "timers" }) }).catch(() => {});
+  }
+
+  function tick() {
+    const now = Date.now(), list = timers();
+    const running = list.filter(t => t.end > now), done = list.filter(t => t.end <= now);
+    const pill = $("timer-pill");
+    if (running.length) { pill.textContent = fmtLeft(running[0].end - now) + (running.length > 1 ? ` +${running.length - 1}` : ""); }
+    else if (done.length) pill.textContent = "Done";
+    pill.classList.toggle("hidden", !list.length);
+    $("timer-btn").classList.toggle("ringing", done.some(t => forMe(t) && now - t.end < 60000));
+    let ping = false;
+    for (const t of done) {
+      const id = String(t.e.id);
+      if (id.startsWith("tmp-") || rang.has(id + t.end)) continue;
+      rang.add(id + t.end);
+      if (now - t.end < 10 * 60000) ping = true;
+      if (forMe(t) && now - t.end < 30000) {
+        chime(); if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+        toast(`⏰ ${named(t.e) ? t.e.title + " is done!" : "Time's up!"}`);
+      }
+    }
+    if (ping) { pingTimers(); LS.set("timer.rang", [...rang].slice(-50)); }
+    // Tidy up: finished timers clear themselves after an hour.
+    for (const t of done) if (now - t.end > 3600000 && t.e.created_by === me && !String(t.e.id).startsWith("tmp-")) removeTodo(t.e, true);
+    document.querySelectorAll("#timer-list [data-end]").forEach(el => {
+      const end = +el.dataset.end, dur = +el.dataset.dur, left = end - now;
+      el.querySelector(".timer-left").textContent = left > 0 ? fmtLeft(left) : "Done ✓";
+      el.querySelector(".timer-bar i").style.width = (dur ? Math.min(100, (1 - left / (dur * 1000)) * 100) : 100) + "%";
+      el.classList.toggle("done", left <= 0);
+    });
+  }
+  setInterval(() => { if (me && document.visibilityState === "visible") tick(); }, 1000);
+
+  function renderTimerList() {
+    const el = $("timer-list"); el.innerHTML = "";
+    const list = timers();
+    if (!list.length) { el.innerHTML = `<p class="muted small timer-empty">No timers running.</p>`; return; }
+    for (const t of list) {
+      const r = document.createElement("div"); r.className = "timer-row";
+      r.dataset.end = t.end; r.dataset.dur = t.dur;
+      r.style.setProperty("--c", person(t.e.created_by || t.e.who).color);
+      r.innerHTML = `<div class="timer-main"><div class="timer-name"></div><div class="timer-sub muted small"></div></div><div class="timer-left"></div><button type="button" class="todo-del" aria-label="Cancel timer">×</button><div class="timer-bar"><i></i></div>`;
+      r.querySelector(".timer-name").textContent = named(t.e) ? t.e.title : fmtDur(t.dur) + " timer";
+      const by = t.e.created_by === me ? "You" : person(t.e.created_by).name;
+      r.querySelector(".timer-sub").textContent = `${by} · ${t.e.who === "both" ? "alerts both of you" : (t.e.created_by === me ? "alerts just you" : `alerts just ${person(t.e.created_by).name}`)} · ${clock(t.end)}`;
+      r.querySelector(".todo-del").onclick = () => cancelTimer(t);
+      el.append(r);
+    }
+    tick();
+  }
+  function cancelTimer(t) {
+    const running = t.end > Date.now();
+    if (running && !confirm(`Cancel ${named(t.e) ? `"${t.e.title}"` : "this timer"}?`)) return;
+    removeTodo(t.e);
+    if (running) notifyOther("change", `${person(me).name} cancelled ${named(t.e) ? `timer "${t.e.title}"` : "a timer"}`, `It had ${fmtLeft(t.end - Date.now())} left`);
+  }
+  function openTimerSheet() {
+    unlockAudio();
+    segButtons($("t-who"), [{ id: "me", name: "Just me", color: person(me).color }, { id: "both", name: "Both of us", color: person("both").color }],
+      timerWho, id => { timerWho = id; LS.set("timer.who", id); });
+    $("t-note").textContent = `${otherPerson().name} gets a heads-up when you start a timer.`;
+    renderTimerList();
+    $("tsheet").classList.remove("hidden"); $("tsheet-bg").classList.remove("hidden");
+  }
+  function closeTimerSheet() { $("tsheet").classList.add("hidden"); $("tsheet-bg").classList.add("hidden"); document.activeElement?.blur(); }
+  const PRESETS = [[60, "1 min"], [180, "3 min"], [300, "5 min"], [600, "10 min"], [900, "15 min"], [1800, "30 min"], [3600, "1 hr"]];
+  const setDur = s => { $("t-h").value = Math.floor(s / 3600) || ""; $("t-m").value = Math.floor(s % 3600 / 60) || ""; $("t-s").value = s % 60 || ""; };
+  for (const [s, label] of PRESETS) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = label;
+    b.onclick = () => { setDur(s); [...$("t-presets").children].forEach(c => c.classList.toggle("on", c === b)); };
+    $("t-presets").append(b);
+  }
+  ["t-h", "t-m", "t-s"].forEach(id => $(id).addEventListener("input", () => [...$("t-presets").children].forEach(c => c.classList.remove("on"))));
+  $("timer-btn").onclick = openTimerSheet;
+  $("tsheet-done").onclick = closeTimerSheet;
+  $("tsheet-bg").onclick = closeTimerSheet;
+  $("tsheet").onsubmit = ev => {
+    ev.preventDefault(); unlockAudio();
+    const n = id => Math.max(0, Math.floor(+$(id).value || 0));
+    const secs = Math.min(n("t-h") * 3600 + n("t-m") * 60 + n("t-s"), 24 * 3600);
+    if (!secs) { toast("Pick how long the timer should run."); return; }
+    const label = $("t-label").value.trim(), end = Date.now() + secs * 1000, who = timerWho === "both" ? "both" : me;
+    saveTodo({ title: label || "Timer", date: todayS(), start_time: null, end_time: null, repeat: "timer", who, created_by: me, notes: JSON.stringify({ end, dur: secs }) });
+    notifyOther("change", `${person(me).name} started ${label ? `timer "${label}"` : "a timer"}`,
+      `${fmtDur(secs)} · goes off at ${clock(end)} · ${who === "both" ? "you'll both get the alert" : `only ${person(me).name} gets the alert`}`);
+    $("t-label").value = ""; setDur(0); [...$("t-presets").children].forEach(c => c.classList.remove("on"));
+    document.activeElement?.blur();
+    toast(`Timer started · ${fmtDur(secs)}`);
   };
 
   // ---------- editor ----------
