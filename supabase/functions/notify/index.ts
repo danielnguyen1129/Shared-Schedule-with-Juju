@@ -2,9 +2,12 @@
 //   type "change"    -> tell the other person that something on the calendar changed
 //   type "chat"      -> tell the other person about a message in the Together chat
 //   type "test"      -> confirm notifications work on the sender's own phone
+//   type "timers"    -> sent by a phone the moment one of its timers ends: alert whoever the timer is for
 //   type "reminders" -> run every minute by pg_cron (see supabase-notify.sql). Each phone picks its own
 //                       reminder times (sub.prefs: r1440 / r60 / r5 / r1 = minutes before). All-day events
 //                       remind at 8am (and 8am the day before with r1440); to-dos at their start time.
+//                       Also fires finished timers (so they still go off with both phones closed), and
+//                       timers ending within the next minute are waited for so they go off on time.
 // Needs secrets VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY. Deploy with "Verify JWT" turned OFF.
 import webpush from "npm:web-push@3.6.7";
 
@@ -22,7 +25,7 @@ const reply = (body: unknown, status = 200) =>
 
 export type Ev = {
   id: string; title: string; date: string; end_date: string | null; start_time: string | null; end_time: string | null;
-  who: string; repeat: string; notes: string | null;
+  who: string; repeat: string; notes: string | null; created_by?: string | null;
 };
 export type Prefs = { r1440?: boolean; r60?: boolean; r5?: boolean; r1?: boolean };
 type Sub = { endpoint: string; person: string; sub: webpush.PushSubscription & { prefs?: Prefs }; tz: string };
@@ -96,6 +99,38 @@ export function dueReminders(events: Ev[], person: string, tz: string, at = new 
   return out;
 }
 
+// ---- timers: events rows with repeat "timer", notes = {"end": epoch ms, "dur": seconds},
+//      who = "both" (alert both phones) or the starter's id (alert only them), created_by = starter ----
+export type Timer = { id: string; title: string; end: number; dur: number; who: string; by: string };
+const NAMES: Record<string, string> = { daniel: "Daniel", juju: "Julie" };
+export function parseTimers(events: Ev[]): Timer[] {
+  const out: Timer[] = [];
+  for (const e of events) {
+    if (e.repeat !== "timer") continue;
+    try {
+      const j = JSON.parse(e.notes || "{}");
+      if (+j.end > 0) out.push({ id: e.id, title: e.title, end: +j.end, dur: +j.dur || 0, who: e.who, by: e.created_by || e.who });
+    } catch { /* bad row, skip */ }
+  }
+  return out.sort((a, b) => a.end - b.end);
+}
+// Timers that ended in the last 10 minutes (each is only sent once per phone, via mark_sent).
+export const dueTimers = (events: Ev[], at = Date.now()) => parseTimers(events).filter((t) => t.end <= at && t.end > at - 10 * 60000);
+export const soonTimers = (events: Ev[], at = Date.now(), within = 65000) => parseTimers(events).filter((t) => t.end > at && t.end <= at + within);
+export const timerTargets = <S extends { person: string }>(subs: S[], t: Timer) => t.who === "both" ? subs : subs.filter((s) => s.person === t.by);
+const fmtDur = (s: number) => {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return [h && `${h} hr`, m && `${m} min`, x && `${x} sec`].filter(Boolean).join(" ") || "";
+};
+export function timerMessage(t: Timer, person: string) {
+  const named = t.title && t.title !== "Timer";
+  const whose = person === t.by ? "Your" : `${NAMES[t.by] ?? t.by}'s`;
+  return {
+    title: named ? `⏰ ${t.title} is done` : "⏰ Time's up",
+    body: `${whose} ${fmtDur(t.dur) ? fmtDur(t.dur) + " " : ""}timer just went off`,
+  };
+}
+
 if (import.meta.main) Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return reply({ error: "POST only" }, 405);
@@ -128,9 +163,36 @@ if (import.meta.main) Deno.serve(async (req) => {
     }
   };
 
+  const fireTimers = async (list: Timer[]) => {
+    let sent = 0;
+    for (const t of list) for (const s of timerTargets(subs, t)) {
+      if (await rpc("mark_sent", { p_key: `${s.endpoint.slice(-40)}|timer|${t.id}|${t.end}` })) {
+        const m = timerMessage(t, s.person);
+        if (await send(s, m.title, m.body, `timer|${t.id}`)) sent++;
+      }
+    }
+    return sent;
+  };
+
+  if (body.type === "timers") {
+    const events = (await rpc("list_events")) as Ev[];
+    return reply({ sent: await fireTimers(dueTimers(events)) });
+  }
+
   if (body.type === "reminders") {
     const events = (await rpc("list_events")) as Ev[];
-    let sent = 0;
+    let sent = await fireTimers(dueTimers(events));
+    // Timers ending before the next run: keep running in the background and fire them right on time.
+    const soon = soonTimers(events);
+    // deno-lint-ignore no-explicit-any
+    const rt = (globalThis as any).EdgeRuntime;
+    if (soon.length && rt?.waitUntil) rt.waitUntil((async () => {
+      for (const t of soon) {
+        await new Promise((r) => setTimeout(r, Math.max(0, t.end - Date.now())));
+        const fresh = parseTimers((await rpc("list_events")) as Ev[]).find((x) => x.id === t.id && x.end === t.end);
+        if (fresh) await fireTimers([fresh]); // skip if it was cancelled meanwhile
+      }
+    })().catch(() => {}));
     for (const s of subs) {
       for (const r of dueReminders(events, s.person, s.tz, new Date(), { ...DEFAULT_PREFS, ...(s.sub.prefs ?? {}) })) {
         if (await rpc("mark_sent", { p_key: `${s.endpoint.slice(-40)}|${r.key}` })) { if (await send(s, r.title, r.body, r.key)) sent++; }

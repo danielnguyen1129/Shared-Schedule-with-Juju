@@ -9,11 +9,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Our Schedule">
   <meta name="theme-color" content="#fbf1e3">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1793672449">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=1794755916">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="manifest" href="manifest.webmanifest?v=1793672449">
+  <link rel="manifest" href="manifest.webmanifest?v=1794755916">
   <script>try{document.documentElement.dataset.theme=JSON.parse(localStorage.getItem("os.theme"))||"gingham"}catch(e){document.documentElement.dataset.theme="gingham"}</script>
-  <link rel="stylesheet" href="styles.css?v=1793672449">
+  <link rel="stylesheet" href="styles.css?v=1794755916">
 </head>
 <body>
   <!-- Setup / sign-in -->
@@ -97,6 +97,7 @@
     </section>
 
     <button id="add" class="fab" aria-label="Add event">+</button>
+    <button id="timer-btn" class="timer-fab" aria-label="Timers"><span class="tf-icon">⏱️</span><span id="timer-pill" class="tf-text hidden"></span></button>
     <nav class="tabs" id="tabs"></nav>
   </main>
 
@@ -155,9 +156,34 @@
     </div>
   </div>
 
+  <!-- Timer sheet -->
+  <div id="tsheet-bg" class="sheet-bg hidden"></div>
+  <form id="tsheet" class="sheet hidden" autocomplete="off">
+    <div class="sheet-head">
+      <span style="width:60px"></span>
+      <strong>Timers</strong>
+      <button type="button" id="tsheet-done" class="link bold">Done</button>
+    </div>
+    <div class="sheet-body">
+      <div id="timer-list"></div>
+      <div class="day-head timer-new-head">New timer</div>
+      <input id="t-label" class="big-input" placeholder="Name it (optional)" maxlength="60">
+      <div class="timer-presets" id="t-presets"></div>
+      <div class="three">
+        <label class="field"><span>Hours</span><input id="t-h" type="number" inputmode="numeric" min="0" max="23" placeholder="0"></label>
+        <label class="field"><span>Minutes</span><input id="t-m" type="number" inputmode="numeric" min="0" max="59" placeholder="0"></label>
+        <label class="field"><span>Seconds</span><input id="t-s" type="number" inputmode="numeric" min="0" max="59" placeholder="0"></label>
+      </div>
+      <p class="muted small timer-q">When it goes off, notify:</p>
+      <div class="seg" id="t-who"></div>
+      <button type="submit" class="btn primary wide" id="t-start">Start timer</button>
+      <p class="muted small" id="t-note"></p>
+    </div>
+  </form>
+
   <div id="toast" class="toast hidden"></div>
 
-  <script src="config.js?v=1793672449"></script>
-  <script src="app.js?v=1793672449"></script>
+  <script src="config.js?v=1794755916"></script>
+  <script src="app.js?v=1794755916"></script>
 </body>
 </html>
